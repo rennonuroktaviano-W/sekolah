@@ -346,10 +346,12 @@ const scrollToProgress = async (page, m, s) => {
           /* not ours */
         }
       }
-      // Set from inline styles rather than a stylesheet.
+      // Anything set from an inline style counts as declared. Discovered
+      // rather than listed, so a new component cannot slip a var past this.
       for (const el of document.querySelectorAll("*")) {
-        for (const name of ["--leaf-index", "--line"]) {
-          if (el.style.getPropertyValue(name)) declared.add(name);
+        for (let i = 0; i < el.style.length; i++) {
+          const name = el.style.item(i);
+          if (name.startsWith("--")) declared.add(name);
         }
       }
       // Tailwind preflight and next/font own these; not part of our contract.
@@ -414,6 +416,123 @@ const scrollToProgress = async (page, m, s) => {
       return count;
     });
     check("no content is gated behind :hover", hoverOnly === 0);
+    await browser.close();
+  }
+
+  // ---- 5e. Chapter rail --------------------------------------------------
+  {
+    const browser = await chromium.launch();
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await page.goto(BASE, { waitUntil: "networkidle" });
+    const m = await page.evaluate(() => {
+      const el = document.querySelector(".scroll-track");
+      return { h: el.getBoundingClientRect().height, vh: window.innerHeight };
+    });
+
+    /*
+     * The rail and the hint share the opening beat. An opacity that silently
+     * falls back to 1 puts the rail on screen at rest, competing with the
+     * hint, so both ends of the handoff are asserted.
+     */
+    await scrollToProgress(page, m, 0);
+    const handoff = await page.evaluate(() => ({
+      rail: Number(getComputedStyle(document.querySelector(".rail")).opacity),
+      hint: Number(getComputedStyle(document.querySelector(".scroll-hint")).opacity),
+    }));
+    check(
+      "the rail stays out of the way during the opening",
+      handoff.rail === 0 && handoff.hint > 0,
+      `rail ${handoff.rail}, hint ${handoff.hint}`,
+    );
+
+    await scrollToProgress(page, m, 0.25);
+    const handed = await page.evaluate(() => ({
+      rail: Number(getComputedStyle(document.querySelector(".rail")).opacity),
+      hint: Number(getComputedStyle(document.querySelector(".scroll-hint")).opacity),
+    }));
+    check(
+      "the rail takes over once the hint has gone",
+      handed.rail > 0.85 && handed.hint === 0,
+      `rail ${handed.rail}, hint ${handed.hint}`,
+    );
+
+    // The fill must track progress as a scale, not as a layout height.
+    const fill = [];
+    for (const at of [0.2, 0.5, 0.8]) {
+      await scrollToProgress(page, m, at);
+      fill.push(
+        await page.evaluate(() => {
+          const t = getComputedStyle(document.querySelector(".rail__fill")).transform;
+          return t === "none" ? 0 : Number(t.split(",")[3]);
+        }),
+      );
+    }
+    check(
+      "the rail fill tracks progress as a compositor transform",
+      fill.every((v, i) => Math.abs(v - [0.2, 0.5, 0.8][i]) < 0.02),
+      fill.map((v) => v.toFixed(2)).join(" -> "),
+    );
+
+    // Labels are a chapter list: they light in order and never go back out.
+    const order = [];
+    for (const at of [0.05, 0.3, 0.55, 0.75, 0.9, 1]) {
+      await scrollToProgress(page, m, at);
+      order.push(
+        await page.evaluate(() =>
+          [...document.querySelectorAll(".rail__label")].map(
+            (e) => Number(getComputedStyle(e).opacity) > 0.95 ? 1 : 0,
+          ),
+        ),
+      );
+    }
+    const lit = order.map((row) => row.reduce((a, b) => a + b, 0));
+    // Never goes backwards, and never lights a later chapter before an
+    // earlier one. That is what makes it a chapter list rather than a
+    // decoration that happens to brighten.
+    const monotone = lit.every((v, i) => i === 0 || v >= lit[i - 1]);
+    const inOrder = order.every((row) => {
+      const firstUnlit = row.indexOf(0);
+      return firstUnlit === -1 || row.slice(firstUnlit).every((v) => v === 0);
+    });
+    check(
+      "chapter labels light up in order and stay lit",
+      monotone && inOrder && lit[lit.length - 1] === 6,
+      `lit ${lit.join(" -> ")} of 6`,
+    );
+
+    // Exactly one mark may carry the current-position dot.
+    const dots = await page.evaluate(() => {
+      const pseudo = (el) => Number(getComputedStyle(el, "::before").opacity);
+      return [...document.querySelectorAll(".rail__label")].map(pseudo);
+    });
+    const active = dots.filter((d) => d > 0.5).length;
+    check(
+      "exactly one mark is marked as current",
+      active === 1,
+      `dots ${dots.map((d) => d.toFixed(1)).join(" ")}`,
+    );
+
+    const inside = await page.evaluate(() => {
+      const rail = document.querySelector(".rail").getBoundingClientRect();
+      return { left: rail.left, right: rail.right, vw: window.innerWidth };
+    });
+    check(
+      "the rail is inset from the edge, not flush against it",
+      inside.left > inside.vw * 0.85 && inside.right < inside.vw,
+      `rail ${inside.left.toFixed(0)}-${inside.right.toFixed(0)} in ${inside.vw}`,
+    );
+    await browser.close();
+  }
+
+  // ---- 5f. Chapter rail on a phone --------------------------------------
+  {
+    const browser = await chromium.launch();
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await page.goto(BASE, { waitUntil: "networkidle" });
+    const display = await page.evaluate(
+      () => getComputedStyle(document.querySelector(".rail")).display,
+    );
+    check("mobile drops the chapter rail", display === "none", display);
     await browser.close();
   }
 

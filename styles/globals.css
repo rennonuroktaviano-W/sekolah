@@ -841,6 +841,111 @@
   }
 }
 
+/* ------------------------------------------------------------ chapter rail */
+
+/*
+ * Takes over from the hint once the visitor has started exploring. It is
+ * inset from the right edge and kept to a hairline so it reads as a margin
+ * note, not as a scrollbar replacement.
+ *
+ * Everything here is a function of --progress. The fill is a scaleY, so it
+ * never triggers layout, and each label brightens as progress crosses its
+ * mark and then stays lit, which turns the rail into a chapter list.
+ */
+.rail {
+  position: absolute;
+  right: clamp(1.25rem, 2.5vw, 2.75rem);
+  top: 50%;
+  z-index: 3;
+  translate: 0 -50%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: min(46vh, 380px);
+  pointer-events: none;
+  /*
+   * The hint owns the opening beat, so the rail only arrives once the visitor
+   * has started exploring. The whole product has to stay inside calc():
+   * arithmetic outside a math function is invalid, and an invalid opacity
+   * silently falls back to 1, which would show the rail from the first frame.
+   */
+  opacity: calc(clamp(0, (var(--progress) - 0.05) * 9, 1) * 0.9);
+}
+
+.rail__line {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 100%;
+  background: rgba(26, 26, 25, 0.14);
+  overflow: hidden;
+}
+
+.rail__fill {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--color-ink-soft);
+  transform: scaleY(var(--progress));
+  transform-origin: 50% 0;
+  will-change: transform;
+}
+
+.rail__mark {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  /* Marks are laid out by justify-content, not by their own offset. */
+  height: 1px;
+}
+
+.rail__tick {
+  position: relative;
+  flex: none;
+  width: 7px;
+  height: 1px;
+  background: rgba(26, 26, 25, 0.3);
+  transition: background-color 320ms var(--ease-hint);
+}
+
+.rail__label {
+  font-size: 0.62rem;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--color-ink-muted);
+  /*
+   * Brightens as progress crosses --at and then holds. The window is narrow
+   * enough that only one label is mid-transition at a time.
+   */
+  opacity: clamp(0.22, (var(--progress) - var(--at) + 0.02) * 10, 1);
+  will-change: opacity;
+}
+
+/* The mark you are currently inside is the only one carrying a dot. */
+.rail__label::before {
+  content: "";
+  position: absolute;
+  left: -0.65rem;
+  top: 50%;
+  translate: 0 -50%;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--color-ink);
+  /*
+   * Two ramps multiplied: one rises as progress reaches the mark, the other
+   * falls as progress leaves it. calc() around the product, or it is invalid
+   * and the dot shows on every mark at once.
+   */
+  opacity: calc(
+    clamp(0, (var(--progress) - var(--at) + 0.02) * 10, 1) *
+      clamp(0, (var(--at) + 0.16 - var(--progress)) * 10, 1)
+  );
+}
+
 /* ----------------------------------------------------------------- intro */
 
 .intro-overlay {
@@ -991,6 +1096,15 @@ html:not(.js) .intro__line-inner {
     );
   }
 
+  /*
+   * No rail on a phone. There is no margin to put it in, the labels would
+   * need their own contrast treatment against an unknown background, and the
+   * OS scrollbar already reports position.
+   */
+  .rail {
+    display: none;
+  }
+
   .intro-overlay {
     padding: 0 1.5rem;
   }
@@ -1016,6 +1130,11 @@ html:not(.js) .intro__line-inner {
 
   .light__mote {
     opacity: 0.55;
+  }
+
+  /* The rail is driven by scroll position, not by time, so it stays. */
+  .rail__tick {
+    transition: none;
   }
 
   /* The story still plays on scroll, just without blur churn. */
