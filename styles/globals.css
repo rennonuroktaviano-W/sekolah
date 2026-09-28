@@ -21,6 +21,17 @@
 @layer base {
   :root {
     color-scheme: light;
+
+    /*
+     * Look dials. Everything atmospheric reads these, so the whole scene can
+     * be dialled back to something quieter by editing six numbers.
+     */
+    --fx-grain-opacity: 0.035;
+    --fx-vignette-strength: 0.1;
+    --fx-spotlight-opacity: 0.55;
+    --fx-dust-opacity: 0.5;
+    --fx-ray-opacity: 0.34;
+    --fx-streak-opacity: 0.55;
   }
 
   html {
@@ -73,6 +84,66 @@
   height: 100svh;
   overflow: hidden;
   isolation: isolate;
+}
+
+/* ------------------------------------------------------------ atmosphere */
+
+/*
+ * Film grain. A static tiled SVG rather than a `filter`, so it composites as
+ * one cached layer instead of being re-rasterised every frame.
+ */
+.grain {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  pointer-events: none;
+  opacity: var(--fx-grain-opacity);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
+}
+
+/* Vignette sits under the intro copy so type is never dimmed at the edges. */
+.vignette {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse 78% 68% at 50% 46%,
+    rgba(26, 26, 25, 0) 42%,
+    rgba(26, 26, 25, calc(var(--fx-vignette-strength) * 0.45)) 76%,
+    rgba(26, 26, 25, var(--fx-vignette-strength)) 100%
+  );
+}
+
+/* Museum spotlight behind the book, giving the scene a room to sit in. */
+.spotlight {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse 52% 58% at 50% 42%,
+    rgba(255, 250, 238, var(--fx-spotlight-opacity)) 0%,
+    rgba(255, 248, 232, calc(var(--fx-spotlight-opacity) * 0.4)) 46%,
+    rgba(246, 240, 226, 0) 74%
+  );
+  opacity: var(--book-fade);
+}
+
+/* Ground plane: a horizon and a floor sheen so the book is not in a void. */
+.floor {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(232, 227, 216, 0) 62%,
+    rgba(232, 227, 216, 0.34) 76%,
+    rgba(214, 208, 194, 0.5) 100%
+  );
+  opacity: calc(var(--book-fade) * 0.9);
 }
 
 /* ------------------------------------------------------------------ book */

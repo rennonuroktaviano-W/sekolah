@@ -313,6 +313,100 @@ const scrollToProgress = async (page, m, s) => {
     await browser.close();
   }
 
+  // ---- 6. Atmosphere layers ---------------------------------------------
+  {
+    const browser = await chromium.launch();
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await page.goto(BASE, { waitUntil: "networkidle" });
+    const layers = await page.evaluate(() => {
+      const read = (sel) => {
+        const el = document.querySelector(sel);
+        if (!el) return null;
+        const cs = getComputedStyle(el);
+        return { pe: cs.pointerEvents, filter: cs.filter, z: cs.zIndex };
+      };
+      return {
+        grain: read(".grain"),
+        vignette: read(".vignette"),
+        spotlight: read(".spotlight"),
+        floor: read(".floor"),
+      };
+    });
+    const missing = Object.entries(layers)
+      .filter(([, v]) => !v)
+      .map(([k]) => k);
+    check("all atmosphere layers mounted", missing.length === 0, missing.join(", "));
+    check(
+      "atmosphere layers never intercept the scroll",
+      Object.values(layers).every((v) => v && v.pe === "none"),
+    );
+    check(
+      "grain composites from a cached layer, not a filter",
+      layers.grain && layers.grain.filter === "none",
+      layers.grain ? layers.grain.filter : "missing",
+    );
+    check(
+      "vignette paints under the intro copy",
+      Number(layers.vignette.z) < 4,
+      `z-index ${layers.vignette.z} vs intro-overlay 4`,
+    );
+
+    // The book and its lighting have to disappear together, not leave the
+    // spotlight stranded in an otherwise empty frame.
+    const m = await page.evaluate(() => {
+      const el = document.querySelector(".scroll-track");
+      return { h: el.getBoundingClientRect().height, vh: window.innerHeight };
+    });
+    await scrollToProgress(page, m, 0);
+    const atStart = await page.evaluate(() => ({
+      book: getComputedStyle(document.querySelector(".book-scene__stage")).opacity,
+      spot: getComputedStyle(document.querySelector(".spotlight")).opacity,
+    }));
+    await scrollToProgress(page, m, 1);
+    const atEnd = await page.evaluate(() => ({
+      book: getComputedStyle(document.querySelector(".book-scene__stage")).opacity,
+      spot: getComputedStyle(document.querySelector(".spotlight")).opacity,
+    }));
+    check(
+      "spotlight tracks the book's own fade",
+      Number(atStart.spot) > 0.9 &&
+        Number(atEnd.spot) === 0 &&
+        Number(atStart.book) > 0.9 &&
+        Number(atEnd.book) === 0,
+      `book ${atStart.book}->${atEnd.book}, spotlight ${atStart.spot}->${atEnd.spot}`,
+    );
+    await browser.close();
+  }
+
+  // ---- 7. No horizontal overflow anywhere in the sequence ----------------
+  {
+    const browser = await chromium.launch();
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await page.goto(BASE, { waitUntil: "networkidle" });
+    const m = await page.evaluate(() => {
+      const el = document.querySelector(".scroll-track");
+      return { h: el.getBoundingClientRect().height, vh: window.innerHeight };
+    });
+    let worstOverflow = 0;
+    let worstAt = 0;
+    for (let s = 0; s <= 1.0001; s += 0.05) {
+      await scrollToProgress(page, m, s);
+      const over = await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      );
+      if (over > worstOverflow) {
+        worstOverflow = over;
+        worstAt = s;
+      }
+    }
+    check(
+      "no horizontal overflow at any point in the sequence",
+      worstOverflow === 0,
+      `worst ${worstOverflow}px at progress ${worstAt.toFixed(2)}`,
+    );
+    await browser.close();
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })();
