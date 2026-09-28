@@ -1,0 +1,524 @@
+@import "tailwindcss";
+
+@theme {
+  --color-paper: #f4f1ea;
+  --color-paper-deep: #e8e3d8;
+  --color-ink: #1a1a19;
+  --color-ink-soft: #4a4741;
+  --color-ink-muted: #8b867c;
+  --color-book: #22201d;
+  --color-book-edge: #141311;
+  --color-book-spine: #2e2b26;
+  --color-glow: #fdf6e6;
+  --color-glow-warm: #f6e3bb;
+
+  --font-display: var(--font-display-loaded), "Iowan Old Style",
+    "Palatino Linotype", Georgia, "Times New Roman", serif;
+  --font-body: var(--font-body-loaded), -apple-system, BlinkMacSystemFont,
+    "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+}
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background-color: var(--color-glow-warm);
+    color: var(--color-ink);
+  }
+}
+
+/* ---------------------------------------------------------------- scroll */
+
+.scroll-track {
+  position: relative;
+  height: 520svh;
+  --progress: 0;
+  --book-scale: 1;
+  --book-ty: 0px;
+  --book-rx: 8deg;
+  --book-ry: -18deg;
+  --cover-angle: 0deg;
+  --page-open: 0;
+  --page-fan: 0;
+  --spread-rx: 0deg;
+  --light-scale: 0.06;
+  --light-opacity: 0;
+  --light-blur: 2px;
+  --bloom: 0;
+  --fill-opacity: 0;
+  --intro: 0;
+  --shadow-spread: 1;
+  --shadow-opacity: 0.9;
+}
+
+.scroll-track__stage {
+  position: sticky;
+  top: 0;
+  height: 100svh;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+/* ------------------------------------------------------------------ book */
+
+.book-scene {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  perspective: 2200px;
+  perspective-origin: 50% 46%;
+}
+
+.book-scene__stage {
+  transform-style: preserve-3d;
+  transform: translate3d(0, var(--book-ty), 0) scale(var(--book-scale))
+    rotateX(var(--book-rx)) rotateY(var(--book-ry));
+  will-change: transform;
+}
+
+.book {
+  position: relative;
+  width: clamp(190px, 34vmin, 340px);
+  aspect-ratio: 3 / 4;
+  transform-style: preserve-3d;
+}
+
+.book__shadow {
+  position: absolute;
+  left: 50%;
+  bottom: -7%;
+  width: 116%;
+  height: 14%;
+  translate: -50% 0;
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(26, 26, 25, 0.4) 0%,
+    rgba(26, 26, 25, 0.16) 40%,
+    rgba(26, 26, 25, 0) 72%
+  );
+  filter: blur(calc(6px * var(--shadow-spread)));
+  opacity: var(--shadow-opacity);
+  transform: scaleX(var(--shadow-spread));
+  pointer-events: none;
+}
+
+.book__body {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+}
+
+/* Back cover sits flat, front cover swings around the spine on the left. */
+.book__back-cover {
+  position: absolute;
+  inset: 0;
+  transform: translateZ(calc(-14px));
+  border-radius: 2px 10px 10px 2px;
+  background: linear-gradient(115deg, #24211e 0%, #171614 60%, #201e1b 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.5);
+}
+
+.book-cover {
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+  transform: rotateY(var(--cover-angle)) translateZ(6px);
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+
+.book-cover__board {
+  position: absolute;
+  inset: 0;
+  border-radius: 2px 10px 10px 2px;
+  background: linear-gradient(
+    115deg,
+    #2d2a26 0%,
+    #1c1a17 38%,
+    #272421 66%,
+    #161513 100%
+  );
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05),
+    inset 1px 0 0 rgba(255, 255, 255, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 18px 40px -18px rgba(0, 0, 0, 0.6);
+}
+
+.book-cover__inner {
+  position: absolute;
+  inset: 7px;
+  border-radius: 1px 5px 5px 1px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.045);
+  background: linear-gradient(
+    150deg,
+    rgba(255, 255, 255, 0.035) 0%,
+    rgba(255, 255, 255, 0) 42%
+  );
+}
+
+/* Spine strip: the physical hinge the cover rotates around. */
+.book-cover__inner::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 -1px;
+  width: 14px;
+  border-radius: 2px;
+  background: linear-gradient(
+    90deg,
+    #34302a 0%,
+    #1a1815 55%,
+    rgba(0, 0, 0, 0) 100%
+  );
+  transform: translateZ(-1px);
+}
+
+.book-cover__detail {
+  position: absolute;
+  inset: 14% 12%;
+  border: 1px solid rgba(246, 227, 187, 0.16);
+  border-radius: 1px 3px 3px 1px;
+}
+
+/* ----------------------------------------------------------------- pages */
+
+.book-pages {
+  position: absolute;
+  inset: 2.2% 2.6% 2.2% 3.4%;
+  transform-style: preserve-3d;
+  transform: rotateX(var(--spread-rx));
+}
+
+.book-pages__leaf-stack {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  /* Page block gains thickness as the cover lifts. */
+  transform: translateZ(calc(1px + var(--page-open) * 3px));
+}
+
+.book-pages__leaf {
+  position: absolute;
+  background: linear-gradient(
+    92deg,
+    #cfc7b4 0%,
+    #efe8d9 14%,
+    #fbf7ee 46%,
+    #f2ece0 78%,
+    #d9d1bf 100%
+  );
+  box-shadow: 0 0 0 1px rgba(120, 110, 92, 0.14);
+  transform: rotateY(calc(var(--leaf-index) * -0.5deg));
+  opacity: calc(0.6 + var(--page-open) * 0.4);
+}
+
+/*
+ * Fore-edge: the stacked page edges seen from the right side. Rotated onto the
+ * Z axis at the right edge of the block, so it only reads once the camera has
+ * swung far enough to see the side of the book.
+ */
+.book-pages__fore-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 7px;
+  transform-origin: left center;
+  transform: rotateY(90deg) translateZ(calc(-1px - var(--page-open) * 2px));
+  background: repeating-linear-gradient(
+    0deg,
+    #ece5d6 0px,
+    #cdc3ad 0.5px,
+    #f6f1e7 1.5px
+  );
+  opacity: calc(0.45 + var(--page-open) * 0.55);
+}
+
+/* Crease shadow down the centre of the spread. */
+.book-pages__crease {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 24%;
+  translate: -50% 0;
+  background: linear-gradient(
+    90deg,
+    rgba(120, 108, 86, 0) 0%,
+    rgba(120, 108, 86, 0.3) 50%,
+    rgba(120, 108, 86, 0) 100%
+  );
+  opacity: calc(0.1 + var(--page-open) * 0.45);
+}
+
+/* ----------------------------------------------------------------- light */
+
+.light {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 100%;
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  transform-style: preserve-3d;
+  pointer-events: none;
+}
+
+.light__crease,
+.light__halo,
+.light__bloom {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  will-change: transform, opacity;
+}
+
+.light__crease {
+  background: radial-gradient(
+    circle at center,
+    var(--color-glow) 0%,
+    var(--color-glow-warm) 40%,
+    rgba(246, 227, 187, 0) 74%
+  );
+  filter: blur(var(--light-blur));
+  opacity: var(--light-opacity);
+  transform: scale(var(--light-scale));
+}
+
+.light__halo {
+  inset: -20%;
+  background: radial-gradient(
+    circle at center,
+    rgba(255, 246, 224, 0.55) 0%,
+    rgba(246, 227, 187, 0.22) 42%,
+    rgba(246, 227, 187, 0) 68%
+  );
+  filter: blur(calc(10px + var(--light-blur)));
+  opacity: calc(var(--bloom) * 0.9);
+  transform: scale(calc(0.4 + var(--light-scale) * 0.9));
+}
+
+.light__bloom {
+  inset: -60%;
+  background: radial-gradient(
+    circle at center,
+    rgba(255, 251, 240, 0.9) 0%,
+    rgba(253, 246, 230, 0.4) 30%,
+    rgba(246, 227, 187, 0) 62%
+  );
+  filter: blur(28px);
+  opacity: var(--bloom);
+  transform: scale(calc(0.6 + var(--light-scale) * 1.1));
+}
+
+/* Full-viewport takeover that bridges scene 01 into scene 02. */
+.scene-transition {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: radial-gradient(
+    circle at 50% 50%,
+    var(--color-glow) 0%,
+    var(--color-glow-warm) 28%,
+    var(--color-paper) 68%,
+    var(--color-paper) 100%
+  );
+  opacity: var(--fill-opacity);
+  will-change: opacity;
+}
+
+/* ------------------------------------------------------------ scroll hint */
+
+.scroll-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 4.5vh;
+  z-index: 3;
+  translate: -50% 0;
+  display: grid;
+  justify-items: center;
+  gap: 0.9rem;
+  opacity: calc((1 - var(--progress) * 6) * 0.75);
+  pointer-events: none;
+}
+
+.scroll-hint__label {
+  font-size: 0.7rem;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: var(--color-ink-muted);
+}
+
+.scroll-hint__track {
+  position: relative;
+  width: 1px;
+  height: 46px;
+  background: linear-gradient(
+    180deg,
+    rgba(26, 26, 25, 0) 0%,
+    rgba(26, 26, 25, 0.24) 100%
+  );
+  overflow: hidden;
+}
+
+.scroll-hint__dot {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 3px;
+  height: 3px;
+  translate: -50% 0;
+  border-radius: 50%;
+  background: var(--color-ink-soft);
+  animation: hint-fall 2.4s var(--ease-book) infinite;
+}
+
+@keyframes hint-fall {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  25% {
+    opacity: 1;
+  }
+  75% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(46px);
+    opacity: 0;
+  }
+}
+
+/* ----------------------------------------------------------------- intro */
+
+.intro-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  padding: 0 clamp(1.5rem, 7vw, 8rem);
+  pointer-events: none;
+}
+
+.intro {
+  width: min(58ch, 100%);
+  text-align: center;
+}
+
+/* Intro type emerges from the light. Blur is desktop-only (see responsive). */
+.intro__inner > * {
+  opacity: var(--intro);
+  transform: translate3d(0, calc((1 - var(--intro)) * 20px), 0);
+  filter: blur(calc((1 - var(--intro)) * 5px));
+}
+
+/* Typography emerges from the light, so it leads slightly slower. */
+.intro__eyebrow {
+  margin: 0 0 clamp(1.5rem, 3vw, 2.25rem);
+  font-size: clamp(0.68rem, 0.9vw, 0.78rem);
+  letter-spacing: 0.42em;
+  text-transform: uppercase;
+  color: var(--color-ink-muted);
+}
+
+.intro__name {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(2.4rem, 8.5vw, 7rem);
+  line-height: 0.98;
+  letter-spacing: -0.025em;
+  color: var(--color-ink);
+}
+
+.intro__tagline {
+  margin: clamp(1.5rem, 3vw, 2.25rem) auto 0;
+  max-width: 34ch;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: clamp(1.05rem, 2.1vw, 1.5rem);
+  line-height: 1.4;
+  color: var(--color-ink-soft);
+}
+
+.intro__description {
+  margin: clamp(2rem, 4vw, 3rem) auto 0;
+  max-width: 52ch;
+  font-size: clamp(0.95rem, 1.15vw, 1.05rem);
+  line-height: 1.75;
+  color: var(--color-ink-muted);
+  text-wrap: pretty;
+}
+
+/* ----------------------------------------------------------- responsive */
+
+@media (max-width: 768px) {
+  .scroll-track {
+    height: 460svh;
+  }
+
+  .book-scene {
+    perspective: 1300px;
+    perspective-origin: 50% 44%;
+  }
+
+  .book {
+    width: clamp(150px, 46vmin, 240px);
+  }
+
+  /* Cheaper paint on small screens: no large blurred layers. */
+  .light__bloom {
+    filter: blur(16px);
+  }
+
+  .light__halo {
+    filter: blur(4px);
+  }
+
+  .intro__inner > * {
+    filter: none;
+    transform: translate3d(0, calc((1 - var(--intro)) * 14px), 0);
+  }
+
+  .intro-overlay {
+    padding: 0 1.5rem;
+  }
+}
+
+/* --------------------------------------------------------- reduced motion */
+
+@media (prefers-reduced-motion: reduce) {
+  .scroll-hint__dot {
+    animation: none;
+    transform: translateY(20px);
+  }
+
+  /* The story still plays on scroll, just without blur churn. */
+  .light__crease,
+  .light__halo,
+  .light__bloom,
+  .intro__inner > * {
+    filter: none;
+  }
+}
