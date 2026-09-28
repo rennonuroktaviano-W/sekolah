@@ -47,6 +47,9 @@ export function useBookScroll<T extends HTMLElement>() {
       const reveal = easeOutCubic(stage(progress, 0.6, 0.75));
       const light = easeInOutCubic(stage(progress, 0.75, 0.9));
       const fill = easeInOutCubic(stage(progress, 0.9, 1));
+      // The seam ramps ahead of the burst and is still warm when it arrives,
+      // so the crease reads as the source the light is coming out of.
+      const seam = stage(progress, 0.62, 0.78);
 
       // Idle window: a slow drift so the closed book never looks frozen.
       const idleWeight = 1 - stage(progress, 0.08, IDLE_UNTIL);
@@ -75,7 +78,7 @@ export function useBookScroll<T extends HTMLElement>() {
       // Reveal: the spread tips toward the viewer, the leaves fan out, and
       // the crease starts to warm up before the burst proper.
       write("--spread-rx", reveal * -9, "deg");
-      write("--seam", stage(progress, 0.62, 0.78));
+      write("--seam", seam);
 
       /*
        * The spread's curvature. Shallow while the pages are still stacked, so
@@ -92,6 +95,22 @@ export function useBookScroll<T extends HTMLElement>() {
       write("--light-blur", 2 + light * 8, "px");
       write("--bloom", light * (1 - fill * 0.7));
       write("--fill-opacity", fill);
+
+      /*
+       * How much the burst is lighting the room, as opposed to the screen.
+       *
+       * The floor and the spotlight used to know nothing about the light show,
+       * so the brightest thing in the piece did nothing to the space it sat in
+       * and read as a layer pasted over a still-life. One number for both of
+       * them, so they cannot drift apart in how they respond.
+       *
+       * Peaks slightly ahead of the visible bloom: the room brightening is the
+       * cue that the light is a source in the scene and not a graphic. It also
+       * fades with the light rather than surviving it, on the same
+       * 1 - fill handover the burst uses, so nothing is left glowing under the
+       * introduction.
+       */
+      write("--room-heat", Math.min(1, light * (1 - fill) * (1 + seam * 0.18)));
 
       // Scene 02 typography rises out of the light rather than sliding in.
       write("--intro", easeOutCubic(stage(progress, 0.94, 1)));

@@ -79,6 +79,7 @@
   --light-opacity: 0;
   --light-blur: 2px;
   --bloom: 0;
+  --room-heat: 0;
   --fill-opacity: 0;
   --intro: 0;
   /*
@@ -128,34 +129,66 @@
   );
 }
 
-/* Museum spotlight behind the book, giving the scene a room to sit in. */
+/*
+ * Museum spotlight behind the book, giving the scene a room to sit in.
+ *
+ * It used to be a fixed pool that only ever faded with the book, which meant
+ * the largest light in the whole piece had no effect on the room it was
+ * supposedly lighting. It now opens as the burst comes up: the same lamp,
+ * turned up, plus a warmer, tighter core that only exists at the peak.
+ *
+ * --room-heat is a single number for the burst's effect on the environment, so
+ * the floor and the spotlight cannot drift apart in how they respond. It peaks
+ * with the light and then goes out with it, on the same 1 - --fill-opacity
+ * handover the burst itself uses, so the room does not stay lit under the
+ * introduction.
+ */
 .spotlight {
   position: absolute;
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  background: radial-gradient(
-    ellipse 52% 58% at 50% 42%,
-    rgba(255, 250, 238, var(--fx-spotlight-opacity)) 0%,
-    rgba(255, 248, 232, calc(var(--fx-spotlight-opacity) * 0.4)) 46%,
-    rgba(246, 240, 226, 0) 74%
-  );
-  opacity: var(--book-fade);
+  background:
+    radial-gradient(
+      circle at 50% 47%,
+      rgba(255, 252, 244, calc(var(--room-heat) * 0.55)) 0%,
+      rgba(255, 250, 236, calc(var(--room-heat) * 0.16)) 30%,
+      rgba(255, 250, 236, 0) 66%
+    ),
+    radial-gradient(
+      ellipse 52% 58% at 50% 42%,
+      rgba(255, 250, 238, var(--fx-spotlight-opacity)) 0%,
+      rgba(255, 248, 232, calc(var(--fx-spotlight-opacity) * 0.4)) 46%,
+      rgba(246, 240, 226, 0) 74%
+    );
+  opacity: clamp(0, calc(var(--book-fade) + var(--room-heat) * 0.45), 1);
 }
 
-/* Ground plane: a horizon and a floor sheen so the book is not in a void. */
+/*
+ * Ground plane: a horizon and a floor sheen so the book is not in a void, plus
+ * the pool of light the burst throws across it. The pool is the one part of
+ * the room that reacts most strongly: the burst is a light source above and in
+ * front, so the floor is where that reads.
+ */
 .floor {
   position: absolute;
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  background: linear-gradient(
-    180deg,
-    rgba(232, 227, 216, 0) 62%,
-    rgba(232, 227, 216, 0.34) 76%,
-    rgba(214, 208, 194, 0.5) 100%
-  );
-  opacity: calc(var(--book-fade) * 0.9);
+  background:
+    radial-gradient(
+      ellipse 46% 30% at 50% 82%,
+      rgba(255, 251, 238, calc(var(--room-heat) * 0.5)) 0%,
+      rgba(255, 250, 236, calc(var(--room-heat) * 0.14)) 44%,
+      rgba(255, 250, 236, 0) 78%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(232, 227, 216, 0) 62%,
+      rgba(232, 227, 216, 0.34) 76%,
+      rgba(214, 208, 194, 0.5) 100%
+    );
+  opacity: clamp(0, calc((var(--book-fade) * 0.9 + var(--room-heat) * 0.75)), 1);
 }
 
 /* ------------------------------------------------------------------ book */

@@ -304,7 +304,7 @@ const scrollToProgress = async (page, m, s) => {
       const names = [
         "--progress", "--book-scale", "--book-ty", "--book-rx", "--book-ry",
         "--cover-angle", "--page-open", "--seam", "--spread-rx",
-        "--page-curve-angle", "--page-curve-depth",
+        "--page-curve-angle", "--page-curve-depth", "--room-heat",
         "--book-fade", "--light-scale", "--light-opacity", "--light-blur",
         "--bloom", "--fill-opacity", "--intro",
         "--fx-grain-opacity", "--fx-vignette-strength", "--fx-spotlight-opacity",
@@ -758,6 +758,84 @@ const scrollToProgress = async (page, m, s) => {
       softOpen >= softClosed,
       `blur/width ${softOpen.toFixed(4)} open vs ${softClosed.toFixed(4)} closed`,
     );
+    await browser.close();
+  }
+
+  // ---- 5j. The burst lights the room -------------------------------------
+  {
+    const browser = await chromium.launch();
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await page.goto(BASE, { waitUntil: "networkidle" });
+    const m = await page.evaluate(() => {
+      const el = document.querySelector(".scroll-track");
+      return { h: el.getBoundingClientRect().height, vh: window.innerHeight };
+    });
+
+    const sample = async (at) => {
+      await scrollToProgress(page, m, at);
+      return page.evaluate(() => {
+        const op = (s) => Number(getComputedStyle(document.querySelector(s)).opacity);
+        const track = getComputedStyle(document.querySelector(".scroll-track"));
+        return {
+          heat: Number(track.getPropertyValue("--room-heat")),
+          spot: op(".spotlight"),
+          floor: op(".floor"),
+          // Element opacity alone cannot show the burst reaching the room: the
+          // floor's own opacity is already near 1 well before the light starts,
+          // because it is driven by the book's fade. What matters is the warm
+          // pool inside it, which is a separate gradient layer whose alpha
+          // carries the heat. Read that.
+          pool: Number(
+            getComputedStyle(document.querySelector(".floor"))
+              .backgroundImage.match(/rgba?\([^)]*?,\s*([\d.]+)\)\s*0%/)?.[1] ?? 0,
+          ),
+          core: Number(
+            getComputedStyle(document.querySelector(".spotlight"))
+              .backgroundImage.match(/rgba?\([^)]*?,\s*([\d.]+)\)\s*0%/)?.[1] ?? 0,
+          ),
+        };
+      });
+    };
+
+    const before = await sample(0.7);
+    const peak = await sample(0.85);
+    const after = await sample(1);
+
+    check(
+      "the room is dark before the burst",
+      before.heat < 0.05,
+      `--room-heat ${before.heat.toFixed(3)}`,
+    );
+
+    /*
+     * The point of this effect. The burst is a light source inside the scene, so
+     * the space around it has to respond, and it has to do so through a number
+     * the CSS reads rather than through a bespoke opacity per layer.
+     */
+    check(
+      "the room responds to the burst",
+      peak.heat > 0.5 && peak.pool > 0.15 && peak.core > 0.15,
+      `--room-heat ${before.heat.toFixed(2)} -> ${peak.heat.toFixed(2)}, floor pool ${before.pool.toFixed(3)} -> ${peak.pool.toFixed(3)}, spot core ${before.core.toFixed(3)} -> ${peak.core.toFixed(3)}`,
+    );
+
+    /*
+     * And it has to go out with the light. --room-heat is not allowed to
+     * outlast the burst: the book is already gone by here, so a lit floor would
+     * be the last thing left on screen under the introduction.
+     */
+    check(
+      "the room goes dark again with the light",
+      after.heat < 0.02 && after.spot < 0.02 && after.floor < 0.02,
+      `heat ${after.heat.toFixed(3)}, spotlight ${after.spot.toFixed(3)}, floor ${after.floor.toFixed(3)}`,
+    );
+
+    // The room must never be brighter than the light it is responding to.
+    check(
+      "the room never outshines the burst",
+      peak.floor <= peak.heat + 0.001,
+      `floor ${peak.floor.toFixed(3)} vs heat ${peak.heat.toFixed(3)}`,
+    );
+
     await browser.close();
   }
 
