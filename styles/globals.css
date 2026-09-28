@@ -92,6 +92,8 @@
   /* The cover sweep sits at its resting position until the hook moves it. */
   --sheen-x: -62%;
   --sheen-idle: 0;
+  /* The top pages lie flat until the hook lifts them. */
+  --leaf-turn: 0;
 }
 
 .scroll-track__stage {
@@ -738,8 +740,13 @@
   /* Two strips' worth, so the fold lands on the join either side of it. */
   width: calc(100% / var(--strip-count) * 2);
   translate: -50% 0;
-  /* No recession of its own: it must stay welded to the spine. */
-  transform: translateZ(0.4px);
+  /*
+   * No recession of its own: it must stay welded to the spine. It rises above
+   * the leaves as the spread opens, because once they fall flat the fold
+   * shadow and the warm seam have to read as coming from between the papers,
+   * not from behind them.
+   */
+  transform: translateZ(calc(0.4px + var(--page-open) * 10px));
   background: linear-gradient(
     90deg,
     rgba(120, 108, 86, 0) 0%,
@@ -747,6 +754,95 @@
     rgba(120, 108, 86, 0) 100%
   );
   opacity: calc(0.1 + var(--page-open) * 0.45);
+}
+
+/* ------------------------------------------------------------------ leaves */
+
+/*
+ * Two top pages that were holding their own against the cover. The cover sits
+ * on top of them when the book is closed, so they stay in its shadow and are
+ * invisible through the approach; as it lifts they rise with it and stand for
+ * a beat, then fall flat onto the spread through the reveal. Without them the
+ * open book is a ready-made spread under a door swinging open.
+ *
+ * Scroll-driven, all of it: --page-open goes 0->1 as the visitor scrolls, so
+ * the leaves rise, hang and settle as a direct answer to the input, and are
+ * untouched by reduced motion.
+ */
+.book-pages__leaf {
+  position: absolute;
+  /*
+   * The spine, where this page was pressed against its neighbours. Owned by
+   * the surface, so it shares the surface's translateZ toward the viewer and
+   * distributes 3.4% clearance the same way the strips do.
+   */
+  top: 0;
+  bottom: 0;
+  left: 3.4%;
+  width: 96.4%;
+  transform-style: preserve-3d;
+  transform-origin: left center;
+  /*
+   * The rise: as soon as --leaf-turn gets going the leaves stand at their
+   * steepest, hold for a beat, then fall flat as the turn completes. Two
+   * clamped windows over the one number, so no leaf ever jumps from its peak.
+   */
+  --leaf-rise: clamp(0, calc(var(--leaf-turn) / 0.25), 1);
+  --leaf-settle: clamp(0, calc((var(--leaf-turn) - 0.45) / 0.45), 1);
+  /*
+   * Each leaf stands a little higher than the one below, and the combination
+   * of rise and settle curves it: hidden at rest, steepest at mid-open.
+   */
+  --leaf-lift: calc((-75deg - var(--leaf) * 32deg) * (1 - var(--leaf-settle)));
+  transform: translateZ(calc(3px + var(--page-open) * 5px))
+    rotateY(calc(var(--leaf-lift) * var(--leaf-rise)));
+  opacity: var(--leaf-rise);
+  will-change: transform, opacity;
+  pointer-events: none;
+}
+
+.book-pages__leaf-face {
+  position: absolute;
+  inset: 0;
+  /* The faces sit back to back; hide the one pointed away so the recto and
+   * verso never compete as coplanar planes. */
+  backface-visibility: hidden;
+}
+
+.book-pages__leaf--recto {
+  background: linear-gradient(
+    178deg,
+    #fcf9f1 0%,
+    #f6f1e6 82%,
+    #eee7d8 100%
+  );
+}
+
+/*
+ * The back of the page. Slightly darker and a touch warmer, so when the leaf
+ * stands up the reader sees a page rather than a mirror.
+ */
+.book-pages__leaf--verso {
+  background: linear-gradient(
+    8deg,
+    #f4efe3 0%,
+    #efe9dc 78%,
+    #e7dfcf 100%
+  );
+  transform: rotateY(180deg);
+}
+
+.book-pages__leaf--recto::after,
+.book-pages__leaf--verso::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  /* A page's paper is never flat: a faint falloff toward the fore-edge. */
+  background: linear-gradient(
+    268deg,
+    rgba(120, 108, 86, 0) 36%,
+    rgba(120, 108, 86, 0.12) 92%
+  );
 }
 
 /* Warm seam that escapes the crease just before the burst proper. */

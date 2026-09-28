@@ -304,7 +304,7 @@ const scrollToProgress = async (page, m, s) => {
       const names = [
         "--progress", "--book-scale", "--book-ty", "--book-rx", "--book-ry",
         "--cover-angle", "--page-open", "--seam", "--spread-rx",
-        "--page-curve-angle", "--page-curve-depth", "--room-heat",
+        "--page-curve-angle", "--page-curve-depth", "--room-heat", "--leaf-turn",
         "--book-fade", "--light-scale", "--light-opacity", "--light-blur",
         "--bloom", "--fill-opacity", "--intro",
         "--fx-grain-opacity", "--fx-vignette-strength", "--fx-spotlight-opacity",
@@ -834,6 +834,64 @@ const scrollToProgress = async (page, m, s) => {
       "the room never outshines the burst",
       peak.floor <= peak.heat + 0.001,
       `floor ${peak.floor.toFixed(3)} vs heat ${peak.heat.toFixed(3)}`,
+    );
+
+    await browser.close();
+  }
+
+  // ---- 5k. The top pages turn -------------------------------------------
+  {
+    const browser = await chromium.launch();
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await page.goto(BASE, { waitUntil: "networkidle" });
+    const m = await page.evaluate(() => {
+      const el = document.querySelector(".scroll-track");
+      return { h: el.getBoundingClientRect().height, vh: window.innerHeight };
+    });
+    const leafProbe = (sel) =>
+      page.evaluate((s) => {
+        const el = document.querySelector(s);
+        if (!el) return null;
+        const cs = getComputedStyle(el);
+        const deg = (Math.asin(new DOMMatrix(cs.transform).m13) * 180) / Math.PI;
+        return { deg, opacity: parseFloat(cs.opacity) };
+      }, sel);
+
+    const atRest = await leafProbe(".book-pages__leaf");
+    // Standing as the cover finishes opening, before the settle takes hold.
+    await scrollToProgress(page, m, 0.5);
+    const mid = await leafProbe(".book-pages__leaf");
+    // Settled flat through the reveal, with the seam warming behind it.
+    await scrollToProgress(page, m, 0.78);
+    const open = await leafProbe(".book-pages__leaf");
+    const leafCount = await page.evaluate(
+      () => document.querySelectorAll(".book-pages__leaf").length,
+    );
+
+    check(
+      "two leaves are hinged at the spine",
+      leafCount === 2 &&
+        (await page.evaluate(
+          () =>
+            document.querySelectorAll(".book-pages__leaf").length === 2 &&
+            document.querySelectorAll(".book-pages__leaf-face").length === 4,
+        )),
+      `${leafCount} leaves, 4 faces`,
+    );
+    check(
+      "the leaves are absent while the book waits",
+      atRest && atRest.opacity === 0,
+      atRest ? `opacity ${atRest.opacity}` : "missing",
+    );
+    check(
+      "the leaves stand as the cover comes open",
+      mid && Math.abs(mid.deg) > 20 && mid.opacity > 0.95,
+      mid ? `deg ${mid.deg.toFixed(1)}, opacity ${+mid.opacity.toFixed(2)}` : "missing",
+    );
+    check(
+      "the leaves settle flat through the reveal",
+      open && Math.abs(open.deg) < 1 && open.opacity > 0.95,
+      open ? `deg ${open.deg.toFixed(1)}, opacity ${+open.opacity.toFixed(2)}` : "missing",
     );
 
     await browser.close();

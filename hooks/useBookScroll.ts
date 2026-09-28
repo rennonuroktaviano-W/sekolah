@@ -86,6 +86,14 @@ export function useBookScroll<T extends HTMLElement>() {
       write("--page-open", open);
 
       /*
+       * The two top pages rise as the cover finishes opening and fall flat
+       * through the reveal. Driven off their own window (not --page-open,
+       * which peaks too early), so the gesture spans the moment the cover is
+       * fully up through the moment the spread tips toward the visitor.
+       */
+      write("--leaf-turn", easeOutCubic(stage(progress, 0.42, 0.66)));
+
+      /*
        * The cover sheen: one number that is the idle drift while the book is
        * closed and the opening sweep once the visitor scrolls. At rest the
        * board was static and the sweep pinned at -62%; nobody moved it until
