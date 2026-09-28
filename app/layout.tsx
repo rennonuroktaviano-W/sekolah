@@ -32,7 +32,14 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="id" className={`${display.variable} ${body.variable}`}>
+    // The `js` marker below is added by this page's own script before React
+    // hydrates, so <html> legitimately carries one more class than the client
+    // tree expects. Everything else about this element is ours and static.
+    <html
+      lang="id"
+      className={`${display.variable} ${body.variable}`}
+      suppressHydrationWarning
+    >
       <head>
         {/* Marks that scripting is available, so the reveal styles can stay
             off for anyone whose JS never runs. */}

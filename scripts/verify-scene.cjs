@@ -165,7 +165,19 @@ const scrollToProgress = async (page, m, s) => {
   {
     const browser = await chromium.launch();
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    const consoleErrors = [];
+    page.on("console", (m) => {
+      if (m.type() === "error") consoleErrors.push(m.text().slice(0, 100));
+    });
+    page.on("pageerror", (e) => consoleErrors.push(`pageerror: ${e.message}`));
     await page.goto(BASE, { waitUntil: "networkidle" });
+    await page.waitForTimeout(1200);
+    check(
+      "clean hydration, no console or page errors",
+      consoleErrors.length === 0,
+      consoleErrors.join(" | ") || "none",
+    );
+
     const a = await page.evaluate(() => ({
       h1: document.querySelectorAll("h1").length,
       nav: document.querySelectorAll("nav, header nav").length,
@@ -188,6 +200,32 @@ const scrollToProgress = async (page, m, s) => {
     check(
       "school info present in server-rendered HTML",
       raw.includes("[NAMA SEKOLAH]") && raw.includes("<h1"),
+    );
+    await browser.close();
+  }
+
+  // ---- 2b. No-JS fallback ------------------------------------------------
+  {
+    const browser = await chromium.launch();
+    const context = await browser.newContext({
+      viewport: { width: 1440, height: 900 },
+      javaScriptEnabled: false,
+    });
+    const page = await context.newPage();
+    await page.goto(BASE, { waitUntil: "domcontentloaded" });
+    const noJs = await page.evaluate(() => {
+      const name = document.querySelector(".intro__name");
+      if (!name) return { present: false, opacity: null };
+      return {
+        present: true,
+        opacity: getComputedStyle(name).opacity,
+        text: name.textContent.trim(),
+      };
+    });
+    check(
+      "school information readable with JavaScript disabled",
+      noJs.present && Number(noJs.opacity) === 1,
+      noJs.present ? `opacity ${noJs.opacity} for "${noJs.text}"` : "no h1",
     );
     await browser.close();
   }
