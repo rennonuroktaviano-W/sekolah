@@ -417,6 +417,177 @@ const scrollToProgress = async (page, m, s) => {
     await browser.close();
   }
 
+  // ---- 5c. Light show ---------------------------------------------------
+  {
+    const browser = await chromium.launch();
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await page.goto(BASE, { waitUntil: "networkidle" });
+    const m = await page.evaluate(() => {
+      const el = document.querySelector(".scroll-track");
+      return { h: el.getBoundingClientRect().height, vh: window.innerHeight };
+    });
+    const LAYERS = [
+      ".light__crease",
+      ".light__halo",
+      ".light__rays",
+      ".light__bloom",
+      ".light__streak",
+      ".light__chroma--cool",
+      ".light__chroma--warm",
+      ".light__bokeh",
+      ".light__dust",
+    ];
+    const sample = async (at) => {
+      await scrollToProgress(page, m, at);
+      return page.evaluate(
+        (sel) =>
+          sel.map((s) => {
+            const el = document.querySelector(s);
+            return el ? Number(getComputedStyle(el).opacity) : -1;
+          }),
+        LAYERS,
+      );
+    };
+
+    const atRest = await sample(0);
+    check(
+      "every light layer is fully dark before the burst",
+      atRest.every((o) => o === 0),
+      LAYERS.map((s, i) => `${s.slice(7)}:${atRest[i]}`).join(" "),
+    );
+
+    /*
+     * The single most dangerous silent failure in this stylesheet: a
+     * multiply written as `var(--a) * var(--b)` without calc() is invalid at
+     * computed-value time, so opacity falls back to 1 and the layer sits
+     * fully opaque over the whole scene. At rest that reads as "not dark",
+     * and at the peak it reads as "fully lit", so neither endpoint alone
+     * catches it. Requiring the peak to be genuinely partial does.
+     */
+    const atPeak = await sample(0.87);
+    const peak = (name) => atPeak[LAYERS.indexOf(name)];
+    check(
+      "the burst is not a flat opaque slab at its peak",
+      atPeak.some((o) => o > 0.05 && o < 0.98),
+      LAYERS.map((s, i) => `${s.slice(7)}:${atPeak[i].toFixed(2)}`).join(" "),
+    );
+    /*
+     * And the opposite failure: present but invisible. A shaft or a flare
+     * that sits at 0.1 at the peak is a layer that exists in the DOM and
+     * contributes nothing, which no opacity check would notice.
+     */
+    check(
+      "the streak and the shafts actually read at the peak",
+      peak(".light__streak") > 0.35 && peak(".light__rays") > 0.1,
+      `streak ${peak(".light__streak").toFixed(2)}, rays ${peak(".light__rays").toFixed(2)}`,
+    );
+
+    /*
+     * Per-layer opacity is not what the visitor sees. The light lives inside
+     * the book, which fades out, so a layer left at 0.4 opacity is still
+     * invisible. What matters is the effective contribution, parent fade
+     * included, and by the end of the track that has to be zero or the burst
+     * washes out the introduction.
+     */
+    await sample(1);
+    const effective = await page.evaluate((sel) => {
+      // The fade lives on .book, two levels above .light, so a single
+      // getComputedStyle().opacity is not the contribution the eye sees.
+      const chain = (el) => {
+        let product = 1;
+        for (let n = el; n && n !== document.body; n = n.parentElement) {
+          product *= Number(getComputedStyle(n).opacity);
+        }
+        return product;
+      };
+      const per = sel.map((s) => {
+        const el = document.querySelector(s);
+        return { s, effective: chain(el) * Number(getComputedStyle(el).opacity) };
+      });
+      return {
+        book: Number(getComputedStyle(document.querySelector(".book")).opacity),
+        worst: per.reduce((a, b) => (a.effective > b.effective ? a : b)),
+      };
+    }, LAYERS);
+    check(
+      "the burst contributes nothing over the introduction",
+      effective.worst.effective < 0.02,
+      `book ${effective.book}, worst ${effective.worst.s.slice(7)} ${effective.worst.effective.toFixed(4)}`,
+    );
+
+    const blend = await page.evaluate(() => {
+      const streak = document.querySelector(".light__streak");
+      const rays = document.querySelector(".light__rays");
+      return {
+        streak: getComputedStyle(streak).mixBlendMode,
+        rayMask: getComputedStyle(rays).maskImage || getComputedStyle(rays).webkitMaskImage,
+      };
+    });
+    check("the streak composites additively", blend.streak === "screen", blend.streak);
+    check(
+      "the ray fan is masked so it never reaches the frame edge",
+      /radial-gradient/.test(blend.rayMask),
+      blend.rayMask.slice(0, 40),
+    );
+
+    const motes = await page.evaluate(() => {
+      const dust = document.querySelector(".light__dust");
+      return {
+        motes: document.querySelectorAll(".light__mote").length,
+        bokeh: document.querySelectorAll(".light__bokeh-dot").length,
+        // Duplicated durations resynchronise the drift into a visible loop.
+        durations: new Set(
+          [...document.querySelectorAll(".light__bokeh-dot")].map((e) =>
+            getComputedStyle(e).animationDuration,
+          ),
+        ).size,
+        opacity: getComputedStyle(dust).opacity,
+      };
+    });
+    check(
+      "dust and bokeh are present and on desynchronised cycles",
+      motes.motes >= 8 && motes.bokeh >= 4 && motes.durations === motes.bokeh,
+      `${motes.motes} motes, ${motes.bokeh} bokeh, ${motes.durations} distinct durations`,
+    );
+
+    // Nothing here may eat the scroll.
+    const hits = await page.evaluate(
+      (sel) =>
+        sel.filter((s) => {
+          const el = document.querySelector(s);
+          const r = el.getBoundingClientRect();
+          const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+          return el.contains(hit);
+        }),
+      LAYERS,
+    );
+    check("no light layer intercepts the scroll", hits.length === 0, hits.join(", "));
+    await browser.close();
+  }
+
+  // ---- 5d. Light show on a phone -----------------------------------------
+  {
+    const browser = await chromium.launch();
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await page.goto(BASE, { waitUntil: "networkidle" });
+    const mobile = await page.evaluate(() => {
+      const rays = getComputedStyle(document.querySelector(".light__rays"));
+      const root = getComputedStyle(document.documentElement);
+      return {
+        bokeh: getComputedStyle(document.querySelector(".light__bokeh")).display,
+        rayCount: root.getPropertyValue("--ray-count").trim(),
+        rayOpacity: root.getPropertyValue("--fx-ray-opacity").trim(),
+      };
+    });
+    check("mobile drops the bokeh layer", mobile.bokeh === "none", mobile.bokeh);
+    check(
+      "mobile thins the ray fan instead of leaving it at full density",
+      mobile.rayCount === "5" && Number(mobile.rayOpacity) < 0.34,
+      `--ray-count: ${mobile.rayCount}, --fx-ray-opacity: ${mobile.rayOpacity}`,
+    );
+    await browser.close();
+  }
+
   // ---- 5b. Line-masked reveal -------------------------------------------
   {
     const browser = await chromium.launch();

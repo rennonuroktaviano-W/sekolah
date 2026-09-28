@@ -34,6 +34,10 @@
     --fx-dust-opacity: 0.5;
     --fx-ray-opacity: 0.34;
     --fx-streak-opacity: 0.55;
+    --fx-chroma-opacity: 0.3;
+
+    /* Fan density for the light shafts. */
+    --ray-count: 7;
   }
 
   html {
@@ -472,7 +476,10 @@
 
 .light__crease,
 .light__halo,
-.light__bloom {
+.light__bloom,
+.light__rays,
+.light__streak,
+.light__chroma {
   position: absolute;
   inset: 0;
   border-radius: 50%;
@@ -504,6 +511,48 @@
   transform: scale(calc(0.4 + var(--light-scale) * 0.9));
 }
 
+/*
+ * Opacity is tied to the size of the source, not to the bloom. Bloom and
+ * light-opacity rise together, so fading the shafts by bloom crushed them to
+ * near nothing exactly when the burst was brightest. A shaft is something you
+ * see while the source is still small enough to throw one, so it fades as the
+ * source grows past the frame. The clamp floors it once the takeover starts.
+ */
+.light__rays {
+  inset: -30%;
+  border-radius: 0;
+  background: repeating-conic-gradient(
+    from 197deg at 50% 50%,
+    rgba(255, 250, 236, 0) 0deg,
+    rgba(255, 250, 236, 0) 1.2deg,
+    rgba(255, 250, 236, 0.5) 2.4deg,
+    rgba(255, 250, 236, 0) 3.4deg,
+    rgba(255, 250, 236, 0) calc(360deg / var(--ray-count))
+  );
+  -webkit-mask-image: radial-gradient(
+    circle at 50% 50%,
+    #000 0%,
+    rgba(0, 0, 0, 0.55) 22%,
+    rgba(0, 0, 0, 0) 52%
+  );
+  mask-image: radial-gradient(
+    circle at 50% 50%,
+    #000 0%,
+    rgba(0, 0, 0, 0.55) 22%,
+    rgba(0, 0, 0, 0) 52%
+  );
+  opacity: clamp(
+    0,
+    calc(
+      var(--fx-ray-opacity) * var(--light-opacity) *
+        (1.6 - var(--light-scale) * 1.4)
+    ),
+    1
+  );
+  transform: scale(calc(0.5 + var(--light-scale) * 1.6)) rotate(-14deg);
+  transform-origin: 50% 50%;
+}
+
 .light__bloom {
   inset: -60%;
   background: radial-gradient(
@@ -515,6 +564,201 @@
   filter: blur(28px);
   opacity: var(--bloom);
   transform: scale(calc(0.6 + var(--light-scale) * 1.1));
+}
+
+/*
+ * Anamorphic streak. Insets collapse to a wide thin bar, the gradient puts
+ * the energy in a hot horizontal core, and the vertical mask clips it to a
+ * couple of pixels. Screen blending keeps it additive over the bloom instead
+ * of washing the paper out behind it.
+ */
+.light__streak,
+.light__chroma {
+  border-radius: 0;
+  mix-blend-mode: screen;
+  -webkit-mask-image: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0) 46%,
+    #000 50%,
+    rgba(0, 0, 0, 0) 54%
+  );
+  mask-image: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0) 46%,
+    #000 50%,
+    rgba(0, 0, 0, 0) 54%
+  );
+  opacity: calc(var(--fx-streak-opacity) * var(--light-opacity));
+  transform: scaleY(calc(0.5 + var(--light-scale) * 2)) scaleX(1);
+}
+
+.light__streak {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 250, 236, 0) 0%,
+    rgba(255, 246, 224, 0.28) 26%,
+    rgba(255, 253, 246, 0.95) 50%,
+    rgba(255, 246, 224, 0.28) 74%,
+    rgba(255, 250, 236, 0) 100%
+  );
+}
+
+/*
+ * Chromatic split, only at the top of the takeover. The cool copy is nudged
+ * up and the warm copy down, so the fringe sits on the horizontal axis of the
+ * streak the way a real lens does rather than as a rainbow.
+ */
+.light__chroma {
+  opacity: calc(var(--fx-chroma-opacity) * var(--bloom));
+}
+
+.light__chroma--cool {
+  background: linear-gradient(
+    90deg,
+    rgba(120, 190, 255, 0) 30%,
+    rgba(150, 205, 255, 0.5) 50%,
+    rgba(120, 190, 255, 0) 70%
+  );
+  transform: scaleY(calc(0.5 + var(--light-scale) * 2))
+    translateY(calc((1 - var(--bloom)) * 6px));
+}
+
+.light__chroma--warm {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 170, 130, 0) 30%,
+    rgba(255, 190, 150, 0.5) 50%,
+    rgba(255, 170, 130, 0) 70%
+  );
+  transform: scaleY(calc(0.5 + var(--light-scale) * 2))
+    translateY(calc((var(--bloom) - 1) * 6px));
+}
+
+/*
+ * Bokeh. Five soft discs on long, prime-ish drift cycles so they never
+ * resynchronise into a visible loop. They are large and very faint: this is
+ * out-of-focus room light, not confetti.
+ */
+.light__bokeh {
+  position: absolute;
+  inset: -15%;
+  will-change: transform, opacity;
+  opacity: calc(var(--bloom) * (1 - var(--bloom) * 0.4) * 0.9);
+}
+
+.light__bokeh-dot {
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at center,
+    rgba(255, 250, 236, 0.5) 0%,
+    rgba(253, 240, 214, 0.18) 55%,
+    rgba(253, 240, 214, 0) 72%
+  );
+  animation: bokeh-drift 26s var(--ease-hint) infinite alternate;
+}
+
+.light__bokeh-dot:nth-child(1) {
+  width: 14%;
+  aspect-ratio: 1;
+  left: 12%;
+  top: 22%;
+  animation-duration: 24s;
+}
+
+.light__bokeh-dot:nth-child(2) {
+  width: 9%;
+  aspect-ratio: 1;
+  left: 78%;
+  top: 30%;
+  animation-duration: 31s;
+  animation-delay: -7s;
+}
+
+.light__bokeh-dot:nth-child(3) {
+  width: 18%;
+  aspect-ratio: 1;
+  left: 62%;
+  top: 68%;
+  animation-duration: 38s;
+  animation-delay: -15s;
+}
+
+.light__bokeh-dot:nth-child(4) {
+  width: 7%;
+  aspect-ratio: 1;
+  left: 26%;
+  top: 74%;
+  animation-duration: 29s;
+  animation-delay: -3s;
+}
+
+.light__bokeh-dot:nth-child(5) {
+  width: 11%;
+  aspect-ratio: 1;
+  left: 46%;
+  top: 14%;
+  animation-duration: 33s;
+  animation-delay: -21s;
+}
+
+@keyframes bokeh-drift {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    transform: translate3d(6%, -4%, 0) scale(1.12);
+  }
+}
+
+/*
+ * Dust. Only visible while there is light to catch it, so it is tied to the
+ * seam and the early bloom rather than to the whole takeover. Each mote
+ * rises and fades on its own cycle.
+ */
+.light__dust {
+  position: absolute;
+  inset: -10%;
+  will-change: transform, opacity;
+  opacity: calc(
+    var(--fx-dust-opacity) * var(--seam) * (1 - var(--bloom) * 0.85)
+  );
+}
+
+.light__mote {
+  position: absolute;
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: rgba(255, 250, 236, 0.9);
+  animation: mote-rise 18s linear infinite;
+}
+
+.light__mote:nth-child(1) { left: 18%; bottom: 30%; animation-duration: 21s; }
+.light__mote:nth-child(2) { left: 27%; bottom: 24%; animation-duration: 26s; animation-delay: -4s; }
+.light__mote:nth-child(3) { left: 34%; bottom: 36%; animation-duration: 18s; animation-delay: -9s; }
+.light__mote:nth-child(4) { left: 43%; bottom: 28%; animation-duration: 24s; animation-delay: -13s; }
+.light__mote:nth-child(5) { left: 52%; bottom: 32%; animation-duration: 30s; animation-delay: -2s; }
+.light__mote:nth-child(6) { left: 61%; bottom: 26%; animation-duration: 20s; animation-delay: -17s; }
+.light__mote:nth-child(7) { left: 69%; bottom: 34%; animation-duration: 27s; animation-delay: -6s; }
+.light__mote:nth-child(8) { left: 77%; bottom: 22%; animation-duration: 23s; animation-delay: -11s; }
+.light__mote:nth-child(9) { left: 85%; bottom: 30%; animation-duration: 29s; animation-delay: -19s; }
+
+@keyframes mote-rise {
+  0% {
+    transform: translate3d(0, 0, 0);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.7;
+  }
+  85% {
+    opacity: 0.5;
+  }
+  100% {
+    transform: translate3d(2%, -34%, 0);
+    opacity: 0;
+  }
 }
 
 /* Full-viewport takeover that bridges scene 01 into scene 02. */
@@ -722,6 +966,31 @@ html:not(.js) .intro__line-inner {
     filter: blur(4px);
   }
 
+  /*
+   * A phone screen has no room for a seven-ray fan; it reads as a smudge
+   * rather than as light. Fewer, softer shafts, and no bokeh, which is the
+   * most expensive thing here per unit of atmosphere.
+   */
+  :root {
+    --ray-count: 5;
+    --fx-ray-opacity: 0.2;
+    --fx-streak-opacity: 0.34;
+  }
+
+  .light__bokeh {
+    display: none;
+  }
+
+  .light__rays {
+    inset: -18%;
+  }
+
+  .light__dust {
+    opacity: calc(
+      var(--fx-dust-opacity) * var(--seam) * (1 - var(--bloom) * 0.85) * 0.6
+    );
+  }
+
   .intro-overlay {
     padding: 0 1.5rem;
   }
@@ -733,6 +1002,20 @@ html:not(.js) .intro__line-inner {
   .scroll-hint__dot {
     animation: none;
     transform: translateY(20px);
+  }
+
+  /*
+   * Everything that drifts on its own stops. The layers stay mounted and
+   * keep their scroll-driven opacity, so the takeover still reads as light,
+   * it just no longer animates while you are not scrolling.
+   */
+  .light__bokeh-dot,
+  .light__mote {
+    animation: none;
+  }
+
+  .light__mote {
+    opacity: 0.55;
   }
 
   /* The story still plays on scroll, just without blur churn. */
