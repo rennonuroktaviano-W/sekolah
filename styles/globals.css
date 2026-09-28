@@ -455,11 +455,76 @@
   );
 }
 
+/*
+ * The stamped panel: a blind-embossed rule above and below the name, the way a
+ * title is blocked in foil on a real hardcover. inset: 14% 12% left the frame
+ * empty and read as a mistake rather than as restraint, so the frame is now
+ * framing something.
+ */
 .book-cover__detail {
   position: absolute;
   inset: 14% 12%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 9%;
   border: 1px solid rgba(246, 227, 187, 0.16);
   border-radius: 1px 3px 3px 1px;
+  text-align: center;
+  /*
+   * Reversed out. At -178deg the board is showing its inside face, and without
+   * this the title would read through the back of the cover, mirrored, for the
+   * whole second half of the opening.
+   */
+  backface-visibility: hidden;
+}
+
+.book-cover__rule {
+  width: 34%;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    rgba(246, 227, 187, 0) 0%,
+    rgba(246, 227, 187, 0.5) 50%,
+    rgba(246, 227, 187, 0) 100%
+  );
+}
+
+.book-cover__title {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.12em 0.3em;
+  font-family: var(--font-display);
+  font-size: clamp(11px, 3.4cqw, 21px);
+  font-weight: 600;
+  line-height: 1.18;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  /*
+   * Foil, not ink: a warm gradient with a dark inset edge below it, so the
+   * letters catch the same upper-left light as the board they sit on.
+   */
+  background: linear-gradient(168deg, #f6e3bb 0%, #cdb489 46%, #8e7549 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.55));
+}
+
+.book-cover__word {
+  white-space: nowrap;
+}
+
+/*
+ * The board is a fixed pixel width, so the stamp needs a relative unit to scale
+ * with it. Container queries: --book-scale already scales the whole stage
+ * visually, but the text has to be legible in the board's own coordinate space
+ * or it sits tiny on a wide screen and overflows on a phone.
+ */
+.book-cover {
+  container-type: inline-size;
 }
 
 /* ----------------------------------------------------------------- pages */

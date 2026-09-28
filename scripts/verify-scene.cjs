@@ -1378,6 +1378,64 @@ const scrollToProgress = async (page, m, s) => {
       rimClosed !== rimOpen,
       rimClosed === rimOpen ? "box-shadow static" : "brighter when open",
     );
+
+    // ---- the stamped title ------------------------------------------------
+
+    /*
+     * The cover now carries the school's name, drawn from the same content the
+     * introduction reads. It is the first labelled surface the visitor sees,
+     * so an empty or hidden title is a broken first impression.
+     */
+    const stamp = await page.evaluate(() => {
+      const title = document.querySelector(".book-cover__title");
+      return {
+        words: title.textContent.trim(),
+        // The words are separate spans with flex gap: textContent drops the
+        // space it reads from, so rebuild what is actually set side by side.
+        joined: [...document.querySelectorAll(".book-cover__word")]
+          .map((e) => e.textContent)
+          .join(" "),
+        fontSize: title ? getComputedStyle(title).fontSize : "0px",
+        render: title
+          ? { clip: getComputedStyle(title).webkitBackgroundClip, color: getComputedStyle(title).color }
+          : null,
+        backside: getComputedStyle(document.querySelector(".book-cover__detail"))
+          .backfaceVisibility,
+        rules: document.querySelectorAll(".book-cover__rule").length,
+        // The name must actually be legible inside the frame, and the frame
+        // must contain it: a stamp that overflows its panel is a layout bug no
+        // contrast rule would catch.
+        fits:
+          title &&
+          title.scrollHeight <= document.querySelector(".book-cover__detail").clientHeight + 1 &&
+          title.scrollWidth <= document.querySelector(".book-cover__detail").clientWidth + 1,
+      };
+    });
+    check(
+      "the cover carries the school's name",
+      stamp.joined.length > 5 && stamp.joined === "[NAMA SEKOLAH]",
+      `${stamp.joined.length} chars: ${stamp.joined}`,
+    );
+    check(
+      "the title is foil-clipped, not plain ink",
+      stamp.render !== null && stamp.render.clip === "text" && stamp.render.color === "rgba(0, 0, 0, 0)",
+      stamp.render ? `clip ${stamp.render.clip}, colour ${stamp.render.color}` : "missing",
+    );
+    check(
+      "the title fits inside its stamped panel",
+      stamp.fits === true,
+      `font ${stamp.fontSize}`,
+    );
+    check(
+      "the title cannot read mirrored through the open board",
+      stamp.backside === "hidden",
+      `backface ${stamp.backside}`,
+    );
+    check(
+      "the rules still frame the title",
+      stamp.rules === 2,
+      `${stamp.rules} rules`,
+    );
     await browser.close();
   }
 
