@@ -73,6 +73,8 @@
   --page-fan: 0;
   --seam: 0;
   --spread-rx: 0deg;
+  --page-curve-angle: 10deg;
+  --page-curve-depth: 6px;
   --book-fade: 1;
   --light-scale: 0.06;
   --light-opacity: 0;
@@ -376,13 +378,31 @@
 /* ----------------------------------------------------------------- pages */
 
 .book-pages {
+  --strip-count: 12;
+  /* Thickness of the page block, shown as the fore-edge. */
+  --page-fore-width: 7px;
+  --page-curve-angle-scale: 1;
+  --page-curve-depth-scale: 1;
   position: absolute;
   inset: 2.2% 2.6% 2.2% 3.4%;
   transform-style: preserve-3d;
   transform: rotateX(var(--spread-rx));
 }
 
-.book-pages__leaf-stack {
+/*
+ * The spread, cut into vertical strips.
+ *
+ * An open book is a shallow cylinder, not a plane: it sits highest at the
+ * spine and falls away toward both fore-edges. Each strip therefore rotates
+ * about the spine and recedes in Z, in proportion to its signed distance from
+ * the centre. --d is that signed distance in -0.5..0.5, so the two halves
+ * curve the right way from one shared formula.
+ *
+ * The curve is shallow at rest and deepens as the pages fan open, which is
+ * what makes the reveal read as a book settling open rather than as a plane
+ * tipping.
+ */
+.book-pages__surface {
   position: absolute;
   inset: 0;
   transform-style: preserve-3d;
@@ -390,37 +410,138 @@
   transform: translateZ(calc(1px + var(--page-open) * 3px));
 }
 
-.book-pages__leaf {
+.book-pages__strip {
+  --d: calc((var(--strip) + 0.5) / var(--strip-count) - 0.5);
+  /* |d|, without abs(), which is not universally available. */
+  --edge: max(calc(0 - var(--d)), var(--d));
+  /* Which side of the spine: 0.5 left, -0.5 right. Drives the shading. */
+  --strip-side: clamp(-0.5, var(--d) * 40, 0.5);
+
   position: absolute;
+  top: 0;
+  bottom: 0;
+  /*
+   * Exactly one slot wide, with the joins closed by painting just past the
+   * edge rather than by making the element wider.
+   *
+   * Widening the element was the obvious fix for the hairline gaps between
+   * rotated strips, and it is wrong: the extra width has to be clipped back
+   * off or the spread's total width grows and the fore-edge, which is
+   * positioned off that width, drifts further out with every change. The
+   * clipping would also cut the strips out of the parent's 3D space. So the
+   * element stays true to its slot and the shading does the hiding instead.
+   */
+  left: calc(var(--strip) * 100% / var(--strip-count));
+  width: calc(100% / var(--strip-count));
+
+  /*
+   * Every strip rotates about the same vertical line, the spine, so they stay
+   * joined along the crease instead of fanning apart as independent panels.
+   * Expressed in strip widths: the spine sits (STRIPS / 2 - strip) of them
+   * away from this strip's own left edge.
+   */
+  transform-origin: calc((var(--strip-count) / 2 - var(--strip)) * 100%) 50%;
+
   background: linear-gradient(
-    92deg,
-    #cfc7b4 0%,
-    #efe8d9 14%,
-    #fbf7ee 46%,
-    #f2ece0 78%,
-    #d9d1bf 100%
+    180deg,
+    #fdfaf3 0%,
+    #f7f2e7 58%,
+    #efe8d9 100%
   );
-  box-shadow: 0 0 0 1px rgba(120, 110, 92, 0.14);
-  /* Leaves fan out slightly as the spread settles open. */
-  transform: rotateY(
-    calc(var(--leaf-index) * calc(-0.5deg - var(--page-fan) * 1.1deg))
+  /*
+   * The joins are closed by painting outward into the neighbouring slot, not
+   * by sizing the element wrong. A 1px outline sits outside the border box
+   * and is not clipped by the element, so each strip laps 0.5px over the
+   * next one's seam. Half a pixel is enough to kill the hairline and far too
+   * little to show as a doubled edge or to disturb the fore-edge geometry.
+   *
+   * An inset border cannot do this, and is worse than nothing: it eats into
+   * the paper on both sides of every join, which is a visible dark seam on a
+   * light spread.
+   */
+  outline: 0.5px solid transparent;
+
+  transform: translateZ(
+      calc(var(--d) * var(--d) * var(--page-curve-depth) * var(--page-curve-depth-scale) * -1)
+    )
+    rotateY(
+      calc(var(--d) * var(--page-curve-angle) * var(--page-curve-angle-scale))
+    );
+  opacity: calc(0.55 + var(--page-open) * 0.45);
+  will-change: transform;
+}
+
+/*
+ * Shading for the curve. Without it the strips are all the same tone and the
+ * geometry reads as a fan of flat panels rather than a continuous surface.
+ * Falls off with distance from the spine, where the paper turns away from the
+ * light coming off the crease.
+ */
+/*
+ * A soft shadow cast inward from each strip's own trailing edge, not a flat
+ * tint across the whole panel. A flat tint is symmetric per strip, but the
+ * strips are laid out left to right and lit from the upper left, so a flat
+ * tint darkened the right-hand strips more than the left and the bowl read
+ * lopsided. This shades each strip toward the same world direction, and the
+ * joins disappear into it instead of showing as a line.
+ */
+.book-pages__strip::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  /*
+   * The shading runs from each strip's outer edge toward the spine.
+   * --strip-side is 0.5 left of the middle and -0.5 right of it, so one
+   * gradient serves both halves. A per-strip constant cannot know which side
+   * of the spine it sits on, and left the two halves visibly out of step.
+   *
+   * Soft at both ends: a hard edge here would be a seam of its own.
+   */
+  background: linear-gradient(
+    calc(90deg * (1 - 2 * var(--strip-side))),
+    rgba(78, 66, 48, 0) 42%,
+    rgba(78, 66, 48, 0.16) 78%,
+    rgba(78, 66, 48, 0.42) 100%
   );
-  opacity: calc(0.6 + var(--page-open) * 0.4);
+  opacity: calc(0.3 + var(--edge) * 0.7);
 }
 
 /*
  * Fore-edge: the stacked page edges seen from the right side. Rotated onto the
  * Z axis at the right edge of the block, so it only reads once the camera has
  * swung far enough to see the side of the book.
+ *
+ * It is positioned by the same curve as the outermost strip, not by the flat
+ * right edge of the block. Now that the spread is a cylinder, the outer strip
+ * has rotated away from the viewer and receded, and a fore-edge left sitting
+ * on the un-rotated right edge floated 12 to 16px clear of the paper.
  */
 .book-pages__fore-edge {
   position: absolute;
   top: 0;
   bottom: 0;
-  right: 0;
-  width: 7px;
-  transform-origin: left center;
-  transform: rotateY(90deg) translateZ(calc(-1px - var(--page-open) * 2px));
+  /*
+   * Hung off the outer strip, not off the block. At left: 100% it sat on the
+   * right edge of the un-transformed surface, which on a curved spread lands
+   * on top of the last few strips instead of beyond them: the outer strips
+   * rotate away, so the block's projected right edge is inboard of the paper
+   * it belongs to. The page stack was visibly dimming strips 9 through 11.
+   */
+  left: calc(100% + var(--page-fore-width) * -1);
+  width: var(--page-fore-width);
+  /*
+   * Rotated onto the Z axis at the outer edge, hinged at its own left side,
+   * and pushed behind the paper by the block's thickness. Its recession
+   * matches the outer strip so the two stay joined.
+   */
+  transform-origin: 0 50%;
+  transform: translateZ(
+      calc(var(--page-curve-depth) * var(--page-curve-depth-scale) * -0.21)
+    )
+    rotateY(
+      calc(var(--page-curve-angle) * var(--page-curve-angle-scale) * 0.458)
+    )
+    rotateY(90deg) translateZ(calc(-1px - var(--page-open) * 2px));
   background: repeating-linear-gradient(
     0deg,
     #ece5d6 0px,
@@ -431,17 +552,35 @@
 }
 
 /* Crease shadow down the centre of the spread, warming as light builds. */
+/*
+ * Crease. It is a child of the surface, not a sibling, so it inherits the
+ * curve and the recession. As a sibling it was a flat plane lying over a
+ * curved block, which is why the join between the two halves looked stepped
+ * rather than like a valley.
+ */
+/*
+ * Crease: the shadow in the valley at the spine.
+ *
+ * Narrow on purpose. At 24% of the block's width it covered five of the
+ * twelve strips, so the spine shadow was doing most of the work of drawing
+ * the curve and the two halves read as a flat plane with a dark smear down
+ * the middle. A crease is a fold, not a gradient, so it is now about as wide
+ * as two strips and fades out at both ends.
+ */
 .book-pages__crease {
   position: absolute;
   top: 0;
   bottom: 0;
   left: 50%;
-  width: 24%;
+  /* Two strips' worth, so the fold lands on the join either side of it. */
+  width: calc(100% / var(--strip-count) * 2);
   translate: -50% 0;
+  /* No recession of its own: it must stay welded to the spine. */
+  transform: translateZ(0.4px);
   background: linear-gradient(
     90deg,
     rgba(120, 108, 86, 0) 0%,
-    rgba(120, 108, 86, 0.3) 50%,
+    rgba(120, 108, 86, 0.34) 50%,
     rgba(120, 108, 86, 0) 100%
   );
   opacity: calc(0.1 + var(--page-open) * 0.45);
@@ -1060,6 +1199,18 @@ html:not(.js) .intro__line-inner {
 
   .book {
     width: clamp(150px, 46vmin, 240px);
+  }
+
+  /*
+   * Flatter curve on a phone. The strip count cannot drop here: it is a
+   * JavaScript value that decides how many elements exist, and a media query
+   * can only restyle them, so a smaller --strip-count would leave the last
+   * strips positioned past the end of the spread. The curve is a value, so
+   * this can be dialled safely.
+   */
+  .book-pages {
+    --page-curve-angle-scale: 0.6;
+    --page-curve-depth-scale: 0.55;
   }
 
   /* Cheaper paint on small screens: no large blurred layers. */

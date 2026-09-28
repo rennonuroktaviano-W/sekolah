@@ -78,6 +78,15 @@ export function useBookScroll<T extends HTMLElement>() {
       write("--page-fan", reveal);
       write("--seam", stage(progress, 0.62, 0.78));
 
+      /*
+       * The spread's curvature. Shallow while the pages are still stacked, so
+       * the closed book keeps its flat slab silhouette, then deepens through
+       * the reveal so the open book reads as a surface falling away from the
+       * spine rather than as a flat plane tipping over.
+       */
+      write("--page-curve-angle", 10 + reveal * 26, "deg");
+      write("--page-curve-depth", 6 + reveal * 34, "px");
+
       // Light: a glow at the crease grows into a bloom, then takes the frame.
       write("--light-scale", 0.08 + light * 0.55 + fill * 1.4);
       write("--light-opacity", light * (1 - fill * 0.3));

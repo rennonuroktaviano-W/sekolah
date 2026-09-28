@@ -419,6 +419,185 @@ const scrollToProgress = async (page, m, s) => {
     await browser.close();
   }
 
+  // ---- 5g. Curved page spread --------------------------------------------
+  {
+    const browser = await chromium.launch();
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await page.goto(BASE, { waitUntil: "networkidle" });
+    const m = await page.evaluate(() => {
+      const el = document.querySelector(".scroll-track");
+      return { h: el.getBoundingClientRect().height, vh: window.innerHeight };
+    });
+
+    const STRIPS = await page.evaluate(
+      () => document.querySelectorAll(".book-pages__strip").length,
+    );
+    check(
+      "the spread is built from a full fan of strips",
+      STRIPS >= 10,
+      `${STRIPS} strips`,
+    );
+
+    // The strip count and the divisor the geometry uses cannot drift apart.
+    const counts = await page.evaluate(() => {
+      const pages = getComputedStyle(document.querySelector(".book-pages"));
+      const strip = getComputedStyle(document.querySelector(".book-pages__strip"));
+      return {
+        declared: pages.getPropertyValue("--strip-count").trim(),
+        width: strip.width,
+        left: strip.left,
+      };
+    });
+    check(
+      "every strip is exactly one slot wide and on its own slot",
+      counts.declared === String(STRIPS) && counts.left.startsWith("0px"),
+      `--strip-count ${counts.declared}, first left ${counts.left}, width ${counts.width}`,
+    );
+
+    // The curve has to be symmetric: both outer edges recede, the spine does
+    // not. An off-by-one in the strip maths shows up as one side receding and
+    // the other not, which reads as a dent rather than a curve.
+    const symmetry = await page.evaluate(() => {
+      const s = [...document.querySelectorAll(".book-pages__strip")];
+      const z = (i) => {
+        const m = getComputedStyle(s[i]).transform;
+        return m === "none" ? 0 : Number(m.slice(m.indexOf("matrix3d(") + 9).split(",")[14]);
+      };
+      const n = s.length;
+      const mid = (n - 1) / 2;
+      return {
+        leftOuter: +z(1).toFixed(2),
+        rightOuter: +z(n - 2).toFixed(2),
+        spine: +z(Math.round(mid)).toFixed(2),
+      };
+    });
+    // Sampled at rest the curve is deliberately shallow, so the spine only
+    // sits a fraction of a pixel proud of the outer strips. The relation
+    // that matters is ordering and symmetry, not a fixed depth: an off-by-one
+    // in the strip maths would make one side recede and not the other.
+    check(
+      "the curve is symmetric about the spine",
+      Math.abs(symmetry.leftOuter - symmetry.rightOuter) < 0.2 &&
+        symmetry.spine > symmetry.leftOuter &&
+        symmetry.leftOuter < 0 &&
+        symmetry.rightOuter < 0,
+      `L ${symmetry.leftOuter}, spine ${symmetry.spine}, R ${symmetry.rightOuter}`,
+    );
+
+    /*
+     * The crease is a fold, not a gradient. At its original 24% width it
+     * covered five of the twelve strips, so the shadow was drawing the curve
+     * instead of the geometry. Two strips' worth is the fold.
+     */
+    const crease = await page.evaluate(() => {
+      const pages = document.querySelector(".book-pages");
+      const strips = [...document.querySelectorAll(".book-pages__strip")];
+      const c = document.querySelector(".book-pages__crease").getBoundingClientRect();
+      const covers = strips.filter((s) => {
+        const b = s.getBoundingClientRect();
+        return Math.min(b.right, c.right) - Math.max(b.left, c.left) > b.width * 0.5;
+      });
+      return { count: strips.length, covered: covers.length, w: +c.width.toFixed(0) };
+    });
+    check(
+      "the crease only marks the fold, not half the spread",
+      crease.covered <= 4,
+      `${crease.covered} of ${crease.count} strips under the crease, ${crease.w}px wide`,
+    );
+
+    /*
+     * The page stack has to hang off the outer strip. Hung off the block's
+     * right edge instead, it landed on top of strips 9 to 11 and visibly
+     * dimmed them, because those strips rotate away and the block's projected
+     * edge is inboard of the paper it belongs to.
+     */
+    const fore = await page.evaluate(() => {
+      const strips = [...document.querySelectorAll(".book-pages__strip")];
+      const fb = document.querySelector(".book-pages__fore-edge").getBoundingClientRect();
+      const overlaps = strips
+        .map((s, i) => {
+          const b = s.getBoundingClientRect();
+          const ox = Math.min(fb.right, b.right) - Math.max(fb.left, b.left);
+          return { i, ox: +ox.toFixed(1), w: +b.width.toFixed(1) };
+        })
+        .filter((o) => o.ox > 1);
+      return overlaps;
+    });
+    const worstOverlap = fore.reduce(
+      (worst, o) => Math.max(worst, o.ox / o.w),
+      0,
+    );
+    check(
+      "the page stack sits at the outer edge, not across the paper",
+      worstOverlap < 0.35,
+      fore.length ? fore.map((o) => `${o.i}:${o.ox}px`).join(" ") : "no overlap",
+    );
+
+    // Shading must fall off with distance from the spine, or the curve has
+    // nothing to read from and the spread looks like a flat plane.
+    const shade = await page.evaluate(() => {
+      const s = [...document.querySelectorAll(".book-pages__strip")];
+      const n = s.length;
+      const at = (i) => Number(getComputedStyle(s[i], "::after").opacity);
+      return { spine: at(Math.round((n - 1) / 2)), edge: at(n - 1), near: at(1) };
+    });
+    check(
+      "the curve is shaded by distance from the spine",
+      shade.edge > shade.spine + 0.1 && shade.near > shade.spine + 0.1,
+      `spine ${shade.spine.toFixed(2)}, each side ${shade.near.toFixed(2)} / ${shade.edge.toFixed(2)}`,
+    );
+
+    // Curvature deepens through the reveal, and the block keeps its thickness.
+    const curve = await page.evaluate(() => {
+      const t = getComputedStyle(document.querySelector(".scroll-track"));
+      return {
+        angle: t.getPropertyValue("--page-curve-angle").trim(),
+        depth: t.getPropertyValue("--page-curve-depth").trim(),
+      };
+    });
+    check(
+      "the spread has curvature values to read",
+      parseFloat(curve.angle) > 0 && parseFloat(curve.depth) > 0,
+      `${curve.angle} / ${curve.depth}`,
+    );
+    await browser.close();
+  }
+
+  // ---- 5h. The spread on a phone ------------------------------------------
+  {
+    const browser = await chromium.launch();
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await page.goto(BASE, { waitUntil: "networkidle" });
+    const phone = await page.evaluate(() => {
+      const pages = getComputedStyle(document.querySelector(".book-pages"));
+      const strips = [...document.querySelectorAll(".book-pages__strip")];
+      const z = (i) => {
+        const m = getComputedStyle(strips[i]).transform;
+        return m === "none" ? 0 : Number(m.slice(m.indexOf("matrix3d(") + 9).split(",")[14]);
+      };
+      return {
+        // The DOM and the divisor must still agree, or the last strips get
+        // positioned off the end of the spread.
+        rendered: strips.length,
+        declared: pages.getPropertyValue("--strip-count").trim(),
+        angleScale: Number(pages.getPropertyValue("--page-curve-angle-scale")),
+        depthScale: Number(pages.getPropertyValue("--page-curve-depth-scale")),
+        outerZ: z(strips.length - 2),
+      };
+    });
+    check(
+      "the phone keeps every strip the geometry divides by",
+      phone.rendered === Number(phone.declared),
+      `${phone.rendered} rendered, --strip-count ${phone.declared}`,
+    );
+    check(
+      "the phone curve is flatter but still curved",
+      phone.angleScale < 1 && phone.depthScale < 1 && phone.outerZ < 0,
+      `angle x${phone.angleScale}, depth x${phone.depthScale}, outer Z ${phone.outerZ}`,
+    );
+    await browser.close();
+  }
+
   // ---- 5e. Chapter rail --------------------------------------------------
   {
     const browser = await chromium.launch();
