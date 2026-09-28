@@ -81,6 +81,11 @@
   --bloom: 0;
   --fill-opacity: 0;
   --intro: 0;
+  /*
+   * How soft the cast shadow is. It used to double as the shadow's horizontal
+   * spread, which fought with the silhouette width above: two multipliers for
+   * one property, and the wrong one won at full open. Now it only blurs.
+   */
   --shadow-spread: 1;
   --shadow-opacity: 0.9;
 }
@@ -194,13 +199,38 @@
   width: clamp(190px, 34vmin, 340px);
   aspect-ratio: 3 / 4;
   transform-style: preserve-3d;
+
+  /*
+   * The shadow's true subject is not this box, it is the book's silhouette, and
+   * the two stop agreeing the moment the cover opens.
+   *
+   * The cover is inset: 0 and hinged on its own left edge, so swinging to
+   * -178deg lands it at x in [-W, 0], outside the box to the left. The pages
+   * sit at [0.034W, 0.974W]. At rest the silhouette is therefore this box, but
+   * fully open it is 1.974 boxes wide and centred 0.013 boxes left of the
+   * spine, which is the box's left edge.
+   *
+   * The shadow used to be left: 50% at 116% of the box, so at full open it was
+   * half the width of the thing casting it and sat half a book-width to the
+   * right of it: a dark ellipse under the left half of an open book.
+   *
+   * Both numbers are derived, not tuned. w is the silhouette's width as a
+   * multiple of the box, c is its centre as a fraction of the box width, and
+   * every ground element below is sized and positioned from those two. A check
+   * in verify-scene.cjs asserts the hinge is still on the left edge, so moving
+   * the cover cannot quietly invalidate the geometry again.
+   */
+  --silhouette-w: calc(1 + var(--page-open) * 0.974);
+  --silhouette-c: calc(0.5 - var(--page-open) * 0.513);
+  /* How far the shadow overspills the object casting it. */
+  --silhouette-pad: 1.16;
 }
 
 .book__shadow {
   position: absolute;
-  left: 50%;
+  left: calc(var(--silhouette-c) * 100%);
   bottom: -7%;
-  width: 116%;
+  width: calc(var(--silhouette-w) * var(--silhouette-pad) * 100%);
   height: 14%;
   translate: -50% 0;
   border-radius: 50%;
@@ -210,9 +240,17 @@
     rgba(26, 26, 25, 0.16) 40%,
     rgba(26, 26, 25, 0) 72%
   );
-  filter: blur(calc(6px * var(--shadow-spread)));
+  /*
+   * The blur has to grow with the shadow. Held near 6px, a shadow that doubles
+   * in width is proportionately twice as crisp as the one that worked, and a
+   * cast shadow spreads as it widens: light from a wider object reaches more of
+   * the floor. Scaled to track the silhouette, so the softness the narrow
+   * version had is the softness the wide one keeps.
+   */
+  filter: blur(
+    calc(6px * var(--shadow-spread) * (1 + var(--page-open) * 1.27))
+  );
   opacity: var(--shadow-opacity);
-  transform: scaleX(var(--shadow-spread));
   pointer-events: none;
 }
 
@@ -229,9 +267,9 @@
  */
 .book__reflection {
   position: absolute;
-  left: 50%;
+  left: calc(var(--silhouette-c) * 100%);
   top: 96%;
-  width: 88%;
+  width: calc(var(--silhouette-w) * 0.88 * 100%);
   height: 30%;
   translate: -50% 0;
   transform: scaleY(-1);
@@ -250,9 +288,9 @@
 /* Tight contact shadow, so the book reads as sitting on a surface. */
 .book__contact {
   position: absolute;
-  left: 50%;
+  left: calc(var(--silhouette-c) * 100%);
   bottom: -1.5%;
-  width: 74%;
+  width: calc(var(--silhouette-w) * 0.74 * 100%);
   height: 7%;
   translate: -50% 0;
   border-radius: 50%;

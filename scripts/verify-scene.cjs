@@ -600,6 +600,167 @@ const scrollToProgress = async (page, m, s) => {
     await browser.close();
   }
 
+  // ---- 5i. The shadow belongs to the silhouette --------------------------
+  {
+    const browser = await chromium.launch();
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await page.goto(BASE, { waitUntil: "networkidle" });
+    const m = await page.evaluate(() => {
+      const el = document.querySelector(".scroll-track");
+      return { h: el.getBoundingClientRect().height, vh: window.innerHeight };
+    });
+
+    /*
+     * The geometry in globals.css rests on an assumption about where the hinge
+     * is: the cover is inset: 0 and hinged on its own left edge, so swinging
+     * open lands it outside the box to the left and the silhouette grows to
+     * about 1.97 boxes wide. If the hinge ever moves, --silhouette-w and
+     * --silhouette-c are quietly wrong and the shadow drifts off the book
+     * again. Assert the assumption so that failure is loud.
+     */
+    const hinge = await page.evaluate(() => {
+      const cover = document.querySelector(".book-cover");
+      const spine = document.querySelector(".book__spine");
+      const box = document.querySelector(".book");
+      return {
+        origin: getComputedStyle(cover).transformOrigin,
+        spineLeft: getComputedStyle(spine).left,
+        boxWidth: box.getBoundingClientRect().width,
+        coverWidth: cover.getBoundingClientRect().width,
+      };
+    });
+    check(
+      "the cover is still hinged on the box's left edge",
+      hinge.origin.startsWith("0px") && hinge.spineLeft === "0px",
+      `origin ${hinge.origin}, spine left ${hinge.spineLeft}`,
+    );
+    check(
+      "the cover is the full width of the box, as the silhouette maths assumes",
+      Math.abs(hinge.coverWidth - hinge.boxWidth) < 1.5,
+      `cover ${hinge.coverWidth.toFixed(1)}px vs box ${hinge.boxWidth.toFixed(1)}px`,
+    );
+
+    /*
+     * Now the actual bug. At full open the silhouette is roughly twice the box
+     * and centred on the spine, which is the box's left edge. The shadow was
+     * pinned at left: 50% at 116% of the box, so it was half as wide as the
+     * object casting it and sat half a book-width to the right of it.
+     *
+     * Measured against the real projected silhouette, not against the box.
+     */
+    const rows = [];
+    for (const at of [0, 0.35, 0.6, 0.75]) {
+      await scrollToProgress(page, m, at);
+      rows.push(
+        await page.evaluate(() => {
+          const rect = (s) => document.querySelector(s).getBoundingClientRect();
+          // The visible book: the cover and the spread, unioned.
+          const parts = [rect(".book-cover"), rect(".book-pages")];
+          const left = Math.min(...parts.map((r) => r.left));
+          const right = Math.max(...parts.map((r) => r.right));
+          const silW = right - left;
+          const silC = (left + right) / 2;
+
+          const sh = rect(".book__shadow");
+          const shW = sh.width;
+          const shC = sh.left + sh.width / 2;
+          return {
+            silW: +silW.toFixed(1),
+            shW: +shW.toFixed(1),
+            // Shadow is allowed to overspill the object; the centre is not.
+            widthRatio: +(shW / silW).toFixed(3),
+            centreOffBy: +(shC - silC).toFixed(1),
+            pageOpen: Number(
+              getComputedStyle(document.querySelector(".scroll-track")).getPropertyValue(
+                "--page-open",
+              ),
+            ),
+          };
+        }),
+      );
+    }
+
+    const wideEnough = rows.every((r) => r.widthRatio >= 0.95 && r.widthRatio <= 1.5);
+    check(
+      "the shadow is never narrower than the thing casting it",
+      wideEnough,
+      rows.map((r) => `open ${r.pageOpen.toFixed(2)}: ${r.widthRatio}x`).join(", "),
+    );
+
+    const centred = rows.every((r) => Math.abs(r.centreOffBy) < 14);
+    check(
+      "the shadow's centre tracks the silhouette's centre as the cover opens",
+      centred,
+      rows
+        .map((r) => `open ${r.pageOpen.toFixed(2)}: off by ${r.centreOffBy}px`)
+        .join(", "),
+    );
+
+    // The failure was worst at full open, so that one is called out on its own:
+    // it was a 0.52x shadow sitting 80px right of centre.
+    const full = rows[rows.length - 1];
+    check(
+      "at full open the shadow still covers the whole open book",
+      full.widthRatio > 0.95 && Math.abs(full.centreOffBy) < 14,
+      `open ${full.pageOpen.toFixed(2)}: ${full.widthRatio}x, off by ${full.centreOffBy}px`,
+    );
+
+    /*
+     * A correctly sized shadow can still read as a hard cut-out. What makes a
+     * cast shadow soft is that it gets softer as it gets wider, so the blur has
+     * to grow with the silhouette rather than staying at the value that suited
+     * the closed book.
+     *
+     * offsetHeight, not getBoundingClientRect: the filter is applied in the
+     * element's own coordinate space and only then scaled by the camera, so
+     * comparing a local blur against a post-scale height compares two different
+     * spaces and passes for the wrong reason.
+     */
+    await scrollToProgress(page, m, 0.75);
+    const readShadow = () =>
+      page.evaluate(() => {
+        const el = document.querySelector(".book__shadow");
+        const cs = getComputedStyle(el);
+        const blur = parseFloat(cs.filter.match(/blur\(([\d.]+)px\)/)?.[1] ?? "0");
+        // Local px: the filter applies here, before the camera scales it.
+        return {
+          opacity: +Number(cs.opacity).toFixed(3),
+          blur: +blur.toFixed(2),
+          width: +el.offsetWidth.toFixed(1),
+          height: +el.offsetHeight.toFixed(1),
+        };
+      });
+
+    const open = await readShadow();
+    await scrollToProgress(page, m, 0);
+    const closed = await readShadow();
+
+    check(
+      "the shadow is still painting at full open",
+      open.opacity > 0.05,
+      `opacity ${open.opacity}`,
+    );
+    check(
+      "the shadow blurs by a real fraction of its own height",
+      open.blur > open.height * 0.08,
+      `blur ${open.blur}px on ${open.height}px tall`,
+    );
+
+    /*
+     * Compared against the closed book, measured in the same run rather than
+     * against a constant: a cast shadow spreads as it widens, so the wide one
+     * must not be proportionately crisper than the narrow one that worked.
+     */
+    const softClosed = closed.blur / closed.width;
+    const softOpen = open.blur / open.width;
+    check(
+      "the shadow's softness scales with its width, not pinned to the closed book",
+      softOpen >= softClosed,
+      `blur/width ${softOpen.toFixed(4)} open vs ${softClosed.toFixed(4)} closed`,
+    );
+    await browser.close();
+  }
+
   // ---- 5e. No persistent chrome over the scene --------------------------
   {
     const browser = await chromium.launch();
