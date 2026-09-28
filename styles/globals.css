@@ -89,6 +89,9 @@
    */
   --shadow-spread: 1;
   --shadow-opacity: 0.9;
+  /* The cover sweep sits at its resting position until the hook moves it. */
+  --sheen-x: -62%;
+  --sheen-idle: 0;
 }
 
 .scroll-track__stage {
@@ -424,6 +427,12 @@
  * Specular sweep: a narrow highlight that rakes across the board as it opens.
  * The opacity uses min() to make a triangle that peaks mid-swing, so the
  * highlight travels with the movement instead of fading in and sitting there.
+ *
+ * While the book is closed the sweep is given a slow idle sheen, so the cover
+ * reads as sitting in the light rather than as a frozen graphic: a faint band
+ * that drifts across at about four minutes a cycle. The scroll-driven sweep
+ * and the idle sheen are one number (--sheen-x), blended by the hook, so the
+ * moment the visitor scrolls the sheen hands over to the opening sweep.
  */
 .book-cover__board::before {
   content: "";
@@ -435,9 +444,10 @@
     rgba(255, 251, 240, 0.46) 50%,
     transparent 60%
   );
-  transform: translate3d(calc(var(--page-open) * 130% - 62%), 0, 0);
+  transform: translate3d(var(--sheen-x, -62%), 0, 0);
   opacity: calc(
-    1.15 * max(0, min(var(--page-open), 1 - var(--page-open)))
+    1.15 * max(0, min(var(--page-open), 1 - var(--page-open))) +
+      var(--sheen-idle, 0)
   );
   pointer-events: none;
 }

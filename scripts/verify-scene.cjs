@@ -1439,6 +1439,81 @@ const scrollToProgress = async (page, m, s) => {
     await browser.close();
   }
 
+  // ---- 4j. Idle motion: the sheen, and what reduced motion means to JS ----
+  {
+    const browser = await chromium.launch();
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await page.goto(BASE, { waitUntil: "networkidle" });
+
+    const readNum = (name) =>
+      page.evaluate((n) => {
+        const v = getComputedStyle(
+          document.querySelector(".scroll-track"),
+        ).getPropertyValue(n);
+        return parseFloat(v);
+      }, name);
+
+    // The closed cover carries a faint sheen, and it drifts. The two samples
+    // below are what distinguishes a sheen from a static highlight: it moves.
+    const idle0 = await readNum("--sheen-idle");
+    const sheen0 = await readNum("--sheen-x");
+    await page.waitForTimeout(650);
+    const sheen1 = await readNum("--sheen-x");
+    check(
+      "the closed cover carries a sheen",
+      idle0 > 0.05,
+      `--sheen-idle ${idle0.toFixed(3)}`,
+    );
+    check(
+      "the sheen drifts while the book sits idle",
+      Math.abs(sheen1 - sheen0) > 0.05,
+      `${sheen0.toFixed(2)} -> ${sheen1.toFixed(2)}`,
+    );
+
+    // Scrolling hands the sweep over: the idle term must be gone the moment
+    // the visitor engages, or it would compound with the opening sweep.
+    const m0 = await page.evaluate(() => {
+      const el = document.querySelector(".scroll-track");
+      return { h: el.getBoundingClientRect().height, vh: window.innerHeight };
+    });
+    await scrollToProgress(page, m0, 0.25);
+    const handed = await readNum("--sheen-idle");
+    check(
+      "the idle sheen hands over to the opening sweep",
+      handed === 0,
+      `--sheen-idle ${handed.toFixed(3)}`,
+    );
+
+    // Reduced motion: the JS idle terms are time-based, and the hook is the
+    // only place they can be killed, so it must. The CSS media block cannot
+    // reach into variables written by a rAF loop.
+    const rm = await browser.newPage({
+      viewport: { width: 1440, height: 900 },
+    });
+    await rm.emulateMedia({ reducedMotion: "reduce" });
+    await rm.goto(BASE, { waitUntil: "networkidle" });
+    const rmRead = () =>
+      rm.evaluate((names) => {
+        const cs = getComputedStyle(document.querySelector(".scroll-track"));
+        return Object.fromEntries(names.map((n) => [n, parseFloat(cs.getPropertyValue(n))]));
+      }, ["--sheen-idle", "--sheen-x", "--book-ty"]);
+    const a = await rmRead();
+    await rm.waitForTimeout(650);
+    const b = await rmRead();
+    check(
+      "reduced motion freezes the cover sheen",
+      a["--sheen-idle"] === 0 && b["--sheen-x"] === a["--sheen-x"],
+      `idle ${a["--sheen-idle"].toFixed(3)}, x ${a["--sheen-x"].toFixed(2)} -> ${b["--sheen-x"].toFixed(2)}`,
+    );
+    check(
+      "reduced motion freezes the idle drift",
+      b["--book-ty"] === a["--book-ty"],
+      `--book-ty ${a["--book-ty"].toFixed(3)} -> ${b["--book-ty"].toFixed(3)}`,
+    );
+    await rm.close();
+    await browser.close();
+  }
+
   // ---- 7. No horizontal overflow anywhere in the sequence ----------------
   {
     const browser = await chromium.launch();

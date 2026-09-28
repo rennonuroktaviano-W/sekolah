@@ -32,6 +32,15 @@ export function useBookScroll<T extends HTMLElement>() {
     let scrollingUntil = 0;
     let running = false;
 
+    /*
+     * Time-based motion (the idle drift, the cover sheen) must stop under
+     * prefers-reduced-motion. The scroll-driven sequence is a direct answer to
+     * the visitor's own input, so it stays; the autonomous idle is not.
+     */
+    const reduceMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+
     const write = (name: string, value: number, unit = "") =>
       node.style.setProperty(name, `${value.toFixed(4)}${unit}`);
 
@@ -52,7 +61,8 @@ export function useBookScroll<T extends HTMLElement>() {
       const seam = stage(progress, 0.62, 0.78);
 
       // Idle window: a slow drift so the closed book never looks frozen.
-      const idleWeight = 1 - stage(progress, 0.08, IDLE_UNTIL);
+      const idleWeight = (1 - stage(progress, 0.08, IDLE_UNTIL)) *
+        (reduceMotion ? 0 : 1);
       const driftY = Math.sin(elapsed * 0.00055) * 5 * idleWeight;
       const driftR = Math.sin(elapsed * 0.00037) * 1.1 * idleWeight;
 
@@ -74,6 +84,26 @@ export function useBookScroll<T extends HTMLElement>() {
       // Opening: the cover swings around the spine on the left edge.
       write("--cover-angle", -178 * open, "deg");
       write("--page-open", open);
+
+      /*
+       * The cover sheen: one number that is the idle drift while the book is
+       * closed and the opening sweep once the visitor scrolls. At rest the
+       * board was static and the sweep pinned at -62%; nobody moved it until
+       * the visitor scrolled, so the cover read as a still-life.
+       *
+       * The idle value sits on the same scale as the opening sweep (a
+       * translateX over the board, in percent of the pseudo-element's own
+       * width), so blending the two never needs a separate curve.
+       */
+      const idleSheen = Math.sin(elapsed * 0.00021) * 22 - 55;
+      const activeSheen = 1 - idleWeight;
+      write(
+        "--sheen-x",
+        idleSheen * idleWeight + (open * 130 - 62) * activeSheen,
+        "%",
+      );
+      // The idle is faint by design: fourteen percent, a band of light.
+      write("--sheen-idle", 0.14 * idleWeight);
 
       // Reveal: the spread tips toward the viewer, the leaves fan out, and
       // the crease starts to warm up before the burst proper.
