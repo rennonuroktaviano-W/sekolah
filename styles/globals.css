@@ -5,7 +5,7 @@
   --color-paper-deep: #e8e3d8;
   --color-ink: #1a1a19;
   --color-ink-soft: #4a4741;
-  --color-ink-muted: #8b867c;
+  --color-ink-muted: #6a665c;
   --color-book: #22201d;
   --color-book-edge: #141311;
   --color-book-spine: #2e2b26;
@@ -54,7 +54,9 @@
   --cover-angle: 0deg;
   --page-open: 0;
   --page-fan: 0;
+  --seam: 0;
   --spread-rx: 0deg;
+  --book-fade: 1;
   --light-scale: 0.06;
   --light-opacity: 0;
   --light-blur: 2px;
@@ -88,7 +90,8 @@
   transform-style: preserve-3d;
   transform: translate3d(0, var(--book-ty), 0) scale(var(--book-scale))
     rotateX(var(--book-rx)) rotateY(var(--book-ry));
-  will-change: transform;
+  opacity: var(--book-fade);
+  will-change: transform, opacity;
 }
 
 .book {
@@ -122,6 +125,29 @@
   position: absolute;
   inset: 0;
   transform-style: preserve-3d;
+}
+
+/*
+ * Spine: the binding the cover hinges on. It belongs to the book body rather
+ * than the cover, so it stays put while the cover swings away from it.
+ */
+.book__spine {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3.5%;
+  border-radius: 2px 1px 1px 2px;
+  background: linear-gradient(
+    90deg,
+    #3a352e 0%,
+    #221f1b 46%,
+    #15130f 100%
+  );
+  box-shadow:
+    inset -1px 0 0 rgba(255, 255, 255, 0.05),
+    inset 1px 0 0 rgba(255, 255, 255, 0.07);
+  transform: translateZ(2px);
 }
 
 /* Back cover sits flat, front cover swings around the spine on the left. */
@@ -175,22 +201,6 @@
   );
 }
 
-/* Spine strip: the physical hinge the cover rotates around. */
-.book-cover__inner::before {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 -1px;
-  width: 14px;
-  border-radius: 2px;
-  background: linear-gradient(
-    90deg,
-    #34302a 0%,
-    #1a1815 55%,
-    rgba(0, 0, 0, 0) 100%
-  );
-  transform: translateZ(-1px);
-}
-
 .book-cover__detail {
   position: absolute;
   inset: 14% 12%;
@@ -226,7 +236,10 @@
     #d9d1bf 100%
   );
   box-shadow: 0 0 0 1px rgba(120, 110, 92, 0.14);
-  transform: rotateY(calc(var(--leaf-index) * -0.5deg));
+  /* Leaves fan out slightly as the spread settles open. */
+  transform: rotateY(
+    calc(var(--leaf-index) * calc(-0.5deg - var(--page-fan) * 1.1deg))
+  );
   opacity: calc(0.6 + var(--page-open) * 0.4);
 }
 
@@ -252,7 +265,7 @@
   opacity: calc(0.45 + var(--page-open) * 0.55);
 }
 
-/* Crease shadow down the centre of the spread. */
+/* Crease shadow down the centre of the spread, warming as light builds. */
 .book-pages__crease {
   position: absolute;
   top: 0;
@@ -267,6 +280,20 @@
     rgba(120, 108, 86, 0) 100%
   );
   opacity: calc(0.1 + var(--page-open) * 0.45);
+}
+
+/* Warm seam that escapes the crease just before the burst proper. */
+.book-pages__crease::after {
+  content: "";
+  position: absolute;
+  inset: -12% -30%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(253, 246, 230, 0.85) 0%,
+    rgba(246, 227, 187, 0.35) 40%,
+    rgba(246, 227, 187, 0) 70%
+  );
+  opacity: calc(var(--seam) * (1 - var(--bloom)));
 }
 
 /* ----------------------------------------------------------------- light */
@@ -431,6 +458,16 @@
   opacity: var(--intro);
   transform: translate3d(0, calc((1 - var(--intro)) * 20px), 0);
   filter: blur(calc((1 - var(--intro)) * 5px));
+}
+
+/*
+ * Without scripting the timeline never runs, so the school information is
+ * shown plainly instead of being trapped behind an animation.
+ */
+html:not(.js) .intro__inner > * {
+  opacity: 1;
+  transform: none;
+  filter: none;
 }
 
 /* Typography emerges from the light, so it leads slightly slower. */

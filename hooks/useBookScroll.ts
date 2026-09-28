@@ -1,13 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import {
-  clamp,
-  easeBook,
-  easeInOutCubic,
-  easeOutCubic,
-  stage,
-} from "@/lib/motion";
+import { clamp, easeInOutCubic, easeOutCubic, stage } from "@/lib/motion";
 
 /** Scroll progress below which the book is still considered "at rest". */
 const IDLE_UNTIL = 0.12;
@@ -49,11 +43,10 @@ export function useBookScroll<T extends HTMLElement>() {
 
       // Stage windows, straight from the PRD timeline.
       const approach = easeInOutCubic(stage(progress, 0.15, 0.35));
-      const open = easeBook(stage(progress, 0.35, 0.6));
+      const open = easeInOutCubic(stage(progress, 0.35, 0.6));
       const reveal = easeOutCubic(stage(progress, 0.6, 0.75));
       const light = easeInOutCubic(stage(progress, 0.75, 0.9));
       const fill = easeInOutCubic(stage(progress, 0.9, 1));
-      const intro = easeOutCubic(stage(progress, 0.9, 1));
 
       // Idle window: a slow drift so the closed book never looks frozen.
       const idleWeight = 1 - stage(progress, 0.08, IDLE_UNTIL);
@@ -63,15 +56,27 @@ export function useBookScroll<T extends HTMLElement>() {
       // Camera: eases in during approach, then lifts as the book opens.
       write("--progress", progress);
       write("--book-scale", 1 + approach * 0.26 + reveal * 0.12 - light * 0.08);
-      write("--book-ty", driftY - approach * 3 + light * 30 + fill * 70, "px");
+      write("--book-ty", driftY - approach * 3 + light * 30 - fill * 80, "px");
       write("--book-rx", 6 - open * 10 - reveal * 4 + approach * 3, "deg");
-      write("--book-ry", -20 + approach * 8 + open * 12 + driftR, "deg");
+      write(
+        "--book-ry",
+        -20 + approach * 8 + open * 12 - reveal * 9 + driftR,
+        "deg",
+      );
+
+      // The book dissolves into its own light before any text arrives, so the
+      // introduction never has to compete with the book for legibility.
+      write("--book-fade", 1 - stage(progress, 0.86, 0.93));
 
       // Opening: the cover swings around the spine on the left edge.
       write("--cover-angle", -178 * open, "deg");
       write("--page-open", open);
+
+      // Reveal: the spread tips toward the viewer, the leaves fan out, and
+      // the crease starts to warm up before the burst proper.
+      write("--spread-rx", reveal * -9, "deg");
       write("--page-fan", reveal);
-      write("--spread-rx", reveal * 5, "deg");
+      write("--seam", stage(progress, 0.62, 0.78));
 
       // Light: a glow at the crease grows into a bloom, then takes the frame.
       write("--light-scale", 0.08 + light * 0.55 + fill * 1.4);
@@ -81,7 +86,7 @@ export function useBookScroll<T extends HTMLElement>() {
       write("--fill-opacity", fill);
 
       // Scene 02 typography rises out of the light rather than sliding in.
-      write("--intro", intro);
+      write("--intro", easeOutCubic(stage(progress, 0.94, 1)));
 
       write("--shadow-spread", 1 + approach * 0.28 - open * 0.4);
       write("--shadow-opacity", 0.85 - open * 0.5);

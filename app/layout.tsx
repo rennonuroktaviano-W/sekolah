@@ -33,6 +33,15 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="id" className={`${display.variable} ${body.variable}`}>
+      <head>
+        {/* Marks that scripting is available, so the reveal styles can stay
+            off for anyone whose JS never runs. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: "document.documentElement.classList.add('js')",
+          }}
+        />
+      </head>
       <body>{children}</body>
     </html>
   );

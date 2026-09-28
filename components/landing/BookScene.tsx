@@ -16,8 +16,10 @@ export function BookScene() {
       <div className="book-scene__stage book-stage">
         <div className="book">
           <div className="book__shadow" />
+
           <div className="book__body">
             <div className="book__back-cover" />
+            <div className="book__spine" />
             <BookPages />
             <LightBurst />
             <BookCover />
