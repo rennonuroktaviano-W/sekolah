@@ -24,7 +24,8 @@ const vars = (page) =>
     const cs = getComputedStyle(document.querySelector(".scroll-track"));
     const names = [
       "--progress", "--book-scale", "--book-ty", "--book-rx", "--book-ry",
-      "--cover-angle", "--page-open", "--page-fan", "--seam", "--spread-rx",
+      "--cover-angle", "--page-open", "--seam", "--spread-rx",
+      "--page-curve-angle", "--page-curve-depth",
       "--book-fade", "--light-scale", "--light-opacity", "--bloom",
       "--fill-opacity", "--intro",
     ];
@@ -116,9 +117,9 @@ const scrollToProgress = async (page, m, s) => {
     const v72 = await vars(page);
     check(
       "reveal stage (60-75%) is not a dead zone",
-      Math.abs(v72["--page-fan"] - v6["--page-fan"]) > 0.5 &&
+      Math.abs(v72["--page-curve-angle"] - v6["--page-curve-angle"]) > 5 &&
         Math.abs(v72["--seam"] - v6["--seam"]) > 0.2,
-      `fan ${v6["--page-fan"].toFixed(2)}->${v72["--page-fan"].toFixed(2)}, seam ${v6["--seam"].toFixed(2)}->${v72["--seam"].toFixed(2)}`,
+      `curve ${v6["--page-curve-angle"]}->${v72["--page-curve-angle"]}, seam ${v6["--seam"].toFixed(2)}->${v72["--seam"].toFixed(2)}`,
     );
 
     await scrollToProgress(page, m, 0.94);
@@ -302,7 +303,8 @@ const scrollToProgress = async (page, m, s) => {
     const bad = await page.evaluate(() => {
       const names = [
         "--progress", "--book-scale", "--book-ty", "--book-rx", "--book-ry",
-        "--cover-angle", "--page-open", "--page-fan", "--seam", "--spread-rx",
+        "--cover-angle", "--page-open", "--seam", "--spread-rx",
+        "--page-curve-angle", "--page-curve-depth",
         "--book-fade", "--light-scale", "--light-opacity", "--light-blur",
         "--bloom", "--fill-opacity", "--intro",
         "--fx-grain-opacity", "--fx-vignette-strength", "--fx-spotlight-opacity",
@@ -598,7 +600,7 @@ const scrollToProgress = async (page, m, s) => {
     await browser.close();
   }
 
-  // ---- 5e. Chapter rail --------------------------------------------------
+  // ---- 5e. No persistent chrome over the scene --------------------------
   {
     const browser = await chromium.launch();
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
@@ -608,110 +610,111 @@ const scrollToProgress = async (page, m, s) => {
       return { h: el.getBoundingClientRect().height, vh: window.innerHeight };
     });
 
-    /*
-     * The rail and the hint share the opening beat. An opacity that silently
-     * falls back to 1 puts the rail on screen at rest, competing with the
-     * hint, so both ends of the handoff are asserted.
-     */
+    // The chapter rail was removed: it held the right-hand margin with labels
+    // down it, and the browser's own scrollbar already reports position.
+    // Nothing may take its place, and nothing else may creep into that edge.
+    const chrome = await page.evaluate(() => {
+      const bad = [];
+      for (const el of document.querySelectorAll("body *")) {
+        const cs = getComputedStyle(el);
+        if (cs.display === "none" || cs.visibility === "hidden") continue;
+        if (cs.position !== "fixed" && cs.position !== "sticky") continue;
+        const r = el.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0) continue;
+        const el2 = el;
+        // Only count things that persist as the story scrolls.
+        if (!el2.closest(".scroll-track")) bad.push(el2.className || el2.tagName);
+      }
+      return {
+        fixed: bad,
+        // Right-hand gutter: nothing of ours may live out there.
+        rightEdge: [...document.querySelectorAll(".intro *")]
+          .filter((el) => getComputedStyle(el).position === "fixed")
+          .length,
+        railLeft: document.querySelectorAll(".rail").length,
+      };
+    });
+    check(
+      "no fixed chrome sits over the story",
+      chrome.fixed.length === 0 && chrome.rightEdge === 0,
+      chrome.fixed.join(", ") || "none",
+    );
+    check(
+      "the right-hand rail is gone and not replaced",
+      chrome.railLeft === 0,
+      `${chrome.railLeft} rail elements`,
+    );
+
+    // The scroll hint still opens the story and still gets out of the way.
     await scrollToProgress(page, m, 0);
-    const handoff = await page.evaluate(() => ({
-      rail: Number(getComputedStyle(document.querySelector(".rail")).opacity),
+    const open = await page.evaluate(() => ({
       hint: Number(getComputedStyle(document.querySelector(".scroll-hint")).opacity),
+      right: (() => {
+        const b = document.querySelector(".scroll-hint").getBoundingClientRect();
+        return +(b.left + b.width / 2).toFixed(0);
+      })(),
     }));
     check(
-      "the rail stays out of the way during the opening",
-      handoff.rail === 0 && handoff.hint > 0,
-      `rail ${handoff.rail}, hint ${handoff.hint}`,
+      "the scroll hint opens the story, centred",
+      open.hint > 0.7 && Math.abs(open.right - 720) < 4,
+      `opacity ${open.hint}, centre x${open.right}`,
     );
 
     await scrollToProgress(page, m, 0.25);
-    const handed = await page.evaluate(() => ({
-      rail: Number(getComputedStyle(document.querySelector(".rail")).opacity),
-      hint: Number(getComputedStyle(document.querySelector(".scroll-hint")).opacity),
-    }));
-    check(
-      "the rail takes over once the hint has gone",
-      handed.rail > 0.85 && handed.hint === 0,
-      `rail ${handed.rail}, hint ${handed.hint}`,
+    const gone = await page.evaluate(
+      () => Number(getComputedStyle(document.querySelector(".scroll-hint")).opacity),
     );
+    check("the scroll hint leaves once exploring starts", gone === 0, `${gone}`);
 
-    // The fill must track progress as a scale, not as a layout height.
-    const fill = [];
-    for (const at of [0.2, 0.5, 0.8]) {
-      await scrollToProgress(page, m, at);
-      fill.push(
-        await page.evaluate(() => {
-          const t = getComputedStyle(document.querySelector(".rail__fill")).transform;
-          return t === "none" ? 0 : Number(t.split(",")[3]);
-        }),
-      );
-    }
-    check(
-      "the rail fill tracks progress as a compositor transform",
-      fill.every((v, i) => Math.abs(v - [0.2, 0.5, 0.8][i]) < 0.02),
-      fill.map((v) => v.toFixed(2)).join(" -> "),
-    );
-
-    // Labels are a chapter list: they light in order and never go back out.
-    const order = [];
-    for (const at of [0.05, 0.3, 0.55, 0.75, 0.9, 1]) {
-      await scrollToProgress(page, m, at);
-      order.push(
-        await page.evaluate(() =>
-          [...document.querySelectorAll(".rail__label")].map(
-            (e) => Number(getComputedStyle(e).opacity) > 0.95 ? 1 : 0,
+    // Nothing of ours may still paint at the end, beside the copy. Own opacity
+    // is not enough to answer that: a layer can be fully transparent itself
+    // and still be visible through an opaque parent, or vice versa. What
+    // matters is the product along the ancestor chain.
+    await scrollToProgress(page, m, 1);
+    const end = await page.evaluate(() => {
+      const effective = (el) => {
+        let o = 1;
+        for (let n = el; n && n !== document.documentElement; n = n.parentElement) {
+          o *= Number(getComputedStyle(n).opacity);
+        }
+        return o;
+      };
+      const layer = (sel) => {
+        const el = document.querySelector(sel);
+        return el ? +effective(el).toFixed(3) : 0;
+      };
+      return {
+        book: layer(".book-layer"),
+        pages: layer(".book-pages"),
+        crease: layer(".light__crease"),
+        bloom: layer(".light__bloom"),
+        rays: layer(".light__rays"),
+        // The book is transparent but must also stop intercepting clicks.
+        hit: document
+          .elementsFromPoint(window.innerWidth / 2, window.innerHeight / 2)
+          .some(
+            (el) =>
+              el !== document.body &&
+              el.closest(".book-scene, .light, .atmosphere") !== null,
           ),
-        ),
-      );
-    }
-    const lit = order.map((row) => row.reduce((a, b) => a + b, 0));
-    // Never goes backwards, and never lights a later chapter before an
-    // earlier one. That is what makes it a chapter list rather than a
-    // decoration that happens to brighten.
-    const monotone = lit.every((v, i) => i === 0 || v >= lit[i - 1]);
-    const inOrder = order.every((row) => {
-      const firstUnlit = row.indexOf(0);
-      return firstUnlit === -1 || row.slice(firstUnlit).every((v) => v === 0);
+        intro: layer(".intro-overlay"),
+      };
     });
     check(
-      "chapter labels light up in order and stay lit",
-      monotone && inOrder && lit[lit.length - 1] === 6,
-      `lit ${lit.join(" -> ")} of 6`,
+      "the scene is fully cleared for the copy",
+      end.book === 0 && end.crease === 0 && end.bloom === 0 && end.rays === 0,
+      `book ${end.book}, crease ${end.crease}, bloom ${end.bloom}, rays ${end.rays}`,
     );
-
-    // Exactly one mark may carry the current-position dot.
-    const dots = await page.evaluate(() => {
-      const pseudo = (el) => Number(getComputedStyle(el, "::before").opacity);
-      return [...document.querySelectorAll(".rail__label")].map(pseudo);
-    });
-    const active = dots.filter((d) => d > 0.5).length;
     check(
-      "exactly one mark is marked as current",
-      active === 1,
-      `dots ${dots.map((d) => d.toFixed(1)).join(" ")}`,
+      "the copy is fully opaque at the end",
+      end.intro > 0.99,
+      `intro ${end.intro}`,
     );
-
-    const inside = await page.evaluate(() => {
-      const rail = document.querySelector(".rail").getBoundingClientRect();
-      return { left: rail.left, right: rail.right, vw: window.innerWidth };
-    });
     check(
-      "the rail is inset from the edge, not flush against it",
-      inside.left > inside.vw * 0.85 && inside.right < inside.vw,
-      `rail ${inside.left.toFixed(0)}-${inside.right.toFixed(0)} in ${inside.vw}`,
+      "the invisible scene cannot intercept clicks meant for the copy",
+      end.hit === false,
+      end.hit ? "a scene layer is on top at centre" : "clear",
     );
-    await browser.close();
-  }
-
-  // ---- 5f. Chapter rail on a phone --------------------------------------
-  {
-    const browser = await chromium.launch();
-    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
-    await page.goto(BASE, { waitUntil: "networkidle" });
-    const display = await page.evaluate(
-      () => getComputedStyle(document.querySelector(".rail")).display,
-    );
-    check("mobile drops the chapter rail", display === "none", display);
     await browser.close();
   }
 
@@ -735,6 +738,40 @@ const scrollToProgress = async (page, m, s) => {
       ".light__bokeh",
       ".light__dust",
     ];
+    /*
+     * The burst must reach the intensity its own envelope asks for. It used to
+     * be parented inside the book, so --book-fade, which is on its way to zero
+     * while the burst is still ramping, multiplied into every layer and held
+     * the climax at roughly 0.43 of 1.0. Sample at the peak and compare the
+     * layer against the variable that is meant to drive it.
+     */
+    await scrollToProgress(page, m, 0.9);
+    const climax = await page.evaluate(() => {
+      const el = document.querySelector(".light__crease");
+      let eff = 1;
+      for (let n = el; n && n !== document.documentElement; n = n.parentElement) {
+        eff *= Number(getComputedStyle(n).opacity);
+      }
+      return {
+        own: Number(getComputedStyle(el).opacity),
+        eff: +eff.toFixed(3),
+        drive: Number(
+          getComputedStyle(document.querySelector(".scroll-track")).getPropertyValue(
+            "--light-opacity",
+          ),
+        ),
+        bookFade: Number(
+          getComputedStyle(document.querySelector(".scroll-track")).getPropertyValue(
+            "--book-fade",
+          ),
+        ),
+      };
+    });
+    check(
+      "the burst reaches the intensity its own envelope asks for",
+      climax.eff > 0.8 && Math.abs(climax.eff - climax.own) < 0.02,
+      `effective ${climax.eff} vs own ${climax.own}, --light-opacity ${climax.drive}, --book-fade ${climax.bookFade}`,
+    );
     const sample = async (at) => {
       await scrollToProgress(page, m, at);
       return page.evaluate(
@@ -996,12 +1033,12 @@ const scrollToProgress = async (page, m, s) => {
     });
     await scrollToProgress(page, m, 0);
     const atStart = await page.evaluate(() => ({
-      book: getComputedStyle(document.querySelector(".book-scene__stage")).opacity,
+      book: getComputedStyle(document.querySelector(".book-layer")).opacity,
       spot: getComputedStyle(document.querySelector(".spotlight")).opacity,
     }));
     await scrollToProgress(page, m, 1);
     const atEnd = await page.evaluate(() => ({
-      book: getComputedStyle(document.querySelector(".book-scene__stage")).opacity,
+      book: getComputedStyle(document.querySelector(".book-layer")).opacity,
       spot: getComputedStyle(document.querySelector(".spotlight")).opacity,
     }));
     check(

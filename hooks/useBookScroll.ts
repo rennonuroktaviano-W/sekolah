@@ -75,7 +75,6 @@ export function useBookScroll<T extends HTMLElement>() {
       // Reveal: the spread tips toward the viewer, the leaves fan out, and
       // the crease starts to warm up before the burst proper.
       write("--spread-rx", reveal * -9, "deg");
-      write("--page-fan", reveal);
       write("--seam", stage(progress, 0.62, 0.78));
 
       /*

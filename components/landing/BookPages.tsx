@@ -15,7 +15,11 @@ const STRIPS = 12;
 /** The page block: a curved spread, a fore-edge, and the crease shadow. */
 export function BookPages() {
   return (
-    <div className="book-pages" aria-hidden="true">
+    <div
+      className="book-pages"
+      style={{ "--strip-count": STRIPS } as React.CSSProperties}
+      aria-hidden="true"
+    >
       <div className="book-pages__surface">
         {Array.from({ length: STRIPS }, (_, index) => (
           <span

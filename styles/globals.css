@@ -70,7 +70,6 @@
   --book-ry: -18deg;
   --cover-angle: 0deg;
   --page-open: 0;
-  --page-fan: 0;
   --seam: 0;
   --spread-rx: 0deg;
   --page-curve-angle: 10deg;
@@ -163,14 +162,31 @@
   place-items: center;
   perspective: 2200px;
   perspective-origin: 50% 46%;
+  /*
+   * The scene is a picture, not an interface. It is fully transparent by the
+   * end of the story, but an element with opacity 0 is still hit-tested, so
+   * without this the invisible book sits on top of the copy and swallows any
+   * click aimed at it.
+   */
+  pointer-events: none;
 }
 
 .book-scene__stage {
   transform-style: preserve-3d;
   transform: translate3d(0, var(--book-ty), 0) scale(var(--book-scale))
     rotateX(var(--book-rx)) rotateY(var(--book-ry));
+  will-change: transform;
+}
+
+/*
+ * The book fades, and it fades alone. The light burst is a sibling of this
+ * layer rather than a child, so --book-fade does not scale the climax of the
+ * light show down to half.
+ */
+.book-layer {
+  transform-style: preserve-3d;
   opacity: var(--book-fade);
-  will-change: transform, opacity;
+  will-change: opacity;
 }
 
 .book {
@@ -449,18 +465,19 @@
     #efe8d9 100%
   );
   /*
-   * The joins are closed by painting outward into the neighbouring slot, not
-   * by sizing the element wrong. A 1px outline sits outside the border box
-   * and is not clipped by the element, so each strip laps 0.5px over the
-   * next one's seam. Half a pixel is enough to kill the hairline and far too
-   * little to show as a doubled edge or to disturb the fore-edge geometry.
+   * The joins turned out not to need painting at all. Sampling a scanline
+   * across the spread at full open put the paper either side of every join at
+   * L220-243, with no dip to speak of, so the shared edge is already closed by
+   * the geometry: adjacent strips butt on the same line and the per-strip
+   * shading is soft at both ends. An earlier version lapped each strip 0.5px
+   * over the next with an outline, on the reasoning that a hairline would show.
+   * It was a transparent outline, so it painted nothing, and the scanline
+   * proved there was nothing to paint over.
    *
-   * An inset border cannot do this, and is worse than nothing: it eats into
-   * the paper on both sides of every join, which is a visible dark seam on a
-   * light spread.
+   * An inset border would still be worse than nothing: it eats into the paper
+   * on both sides of every join, which is a visible dark seam on a light
+   * spread.
    */
-  outline: 0.5px solid transparent;
-
   transform: translateZ(
       calc(var(--d) * var(--d) * var(--page-curve-depth) * var(--page-curve-depth-scale) * -1)
     )
@@ -611,6 +628,21 @@
   translate: -50% -50%;
   transform-style: preserve-3d;
   pointer-events: none;
+  /*
+   * The single point where the light show hands over to the copy.
+   *
+   * No individual layer faded out at the end. --light-opacity only fell to
+   * 0.7 and --bloom to 0.3 by the last pixel, so the burst sat on top of the
+   * introduction at two-thirds strength, and the dust motes, which fade out
+   * as the bloom rises rather than with it, never faded at all. Nine
+   * opacities each trying to be the last word is how that happened.
+   *
+   * So the handover is stated once, here, on the container: as --fill-opacity
+   * completes the last act of the timeline, the whole takeover goes with it.
+   * The layers keep their own opacities and their relative balance.
+   */
+  opacity: calc(1 - var(--fill-opacity));
+  will-change: opacity;
 }
 
 .light__crease,
@@ -980,110 +1012,6 @@
   }
 }
 
-/* ------------------------------------------------------------ chapter rail */
-
-/*
- * Takes over from the hint once the visitor has started exploring. It is
- * inset from the right edge and kept to a hairline so it reads as a margin
- * note, not as a scrollbar replacement.
- *
- * Everything here is a function of --progress. The fill is a scaleY, so it
- * never triggers layout, and each label brightens as progress crosses its
- * mark and then stays lit, which turns the rail into a chapter list.
- */
-.rail {
-  position: absolute;
-  right: clamp(1.25rem, 2.5vw, 2.75rem);
-  top: 50%;
-  z-index: 3;
-  translate: 0 -50%;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  height: min(46vh, 380px);
-  pointer-events: none;
-  /*
-   * The hint owns the opening beat, so the rail only arrives once the visitor
-   * has started exploring. The whole product has to stay inside calc():
-   * arithmetic outside a math function is invalid, and an invalid opacity
-   * silently falls back to 1, which would show the rail from the first frame.
-   */
-  opacity: calc(clamp(0, (var(--progress) - 0.05) * 9, 1) * 0.9);
-}
-
-.rail__line {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 1px;
-  height: 100%;
-  background: rgba(26, 26, 25, 0.14);
-  overflow: hidden;
-}
-
-.rail__fill {
-  display: block;
-  width: 100%;
-  height: 100%;
-  background: var(--color-ink-soft);
-  transform: scaleY(var(--progress));
-  transform-origin: 50% 0;
-  will-change: transform;
-}
-
-.rail__mark {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-  /* Marks are laid out by justify-content, not by their own offset. */
-  height: 1px;
-}
-
-.rail__tick {
-  position: relative;
-  flex: none;
-  width: 7px;
-  height: 1px;
-  background: rgba(26, 26, 25, 0.3);
-  transition: background-color 320ms var(--ease-hint);
-}
-
-.rail__label {
-  font-size: 0.62rem;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-  white-space: nowrap;
-  color: var(--color-ink-muted);
-  /*
-   * Brightens as progress crosses --at and then holds. The window is narrow
-   * enough that only one label is mid-transition at a time.
-   */
-  opacity: clamp(0.22, (var(--progress) - var(--at) + 0.02) * 10, 1);
-  will-change: opacity;
-}
-
-/* The mark you are currently inside is the only one carrying a dot. */
-.rail__label::before {
-  content: "";
-  position: absolute;
-  left: -0.65rem;
-  top: 50%;
-  translate: 0 -50%;
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: var(--color-ink);
-  /*
-   * Two ramps multiplied: one rises as progress reaches the mark, the other
-   * falls as progress leaves it. calc() around the product, or it is invalid
-   * and the dot shows on every mark at once.
-   */
-  opacity: calc(
-    clamp(0, (var(--progress) - var(--at) + 0.02) * 10, 1) *
-      clamp(0, (var(--at) + 0.16 - var(--progress)) * 10, 1)
-  );
-}
 
 /* ----------------------------------------------------------------- intro */
 
@@ -1247,15 +1175,6 @@ html:not(.js) .intro__line-inner {
     );
   }
 
-  /*
-   * No rail on a phone. There is no margin to put it in, the labels would
-   * need their own contrast treatment against an unknown background, and the
-   * OS scrollbar already reports position.
-   */
-  .rail {
-    display: none;
-  }
-
   .intro-overlay {
     padding: 0 1.5rem;
   }
@@ -1281,11 +1200,6 @@ html:not(.js) .intro__line-inner {
 
   .light__mote {
     opacity: 0.55;
-  }
-
-  /* The rail is driven by scroll position, not by time, so it stays. */
-  .rail__tick {
-    transition: none;
   }
 
   /* The story still plays on scroll, just without blur churn. */
