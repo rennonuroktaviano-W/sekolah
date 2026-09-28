@@ -15,7 +15,9 @@ export function BookScene() {
     <div className="book-scene">
       <div className="book-scene__stage book-stage">
         <div className="book">
+          <div className="book__reflection" />
           <div className="book__shadow" />
+          <div className="book__contact" />
 
           <div className="book__body">
             <div className="book__back-cover" />

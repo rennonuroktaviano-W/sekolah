@@ -199,6 +199,50 @@
 }
 
 /*
+ * Reflection: a gradient smear rather than a mirrored copy of the book. It
+ * reads the same at this scale and costs zero extra nodes inside the 3D
+ * subtree, which matters because every node there is depth-sorted.
+ */
+.book__reflection {
+  position: absolute;
+  left: 50%;
+  top: 96%;
+  width: 88%;
+  height: 30%;
+  translate: -50% 0;
+  transform: scaleY(-1);
+  background: linear-gradient(
+    180deg,
+    rgba(26, 26, 25, 0.2) 0%,
+    rgba(26, 26, 25, 0.08) 34%,
+    rgba(26, 26, 25, 0) 78%
+  );
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 40%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 0%, #000 40%, transparent 100%);
+  opacity: calc(var(--book-fade) * var(--shadow-opacity) * 0.7);
+  pointer-events: none;
+}
+
+/* Tight contact shadow, so the book reads as sitting on a surface. */
+.book__contact {
+  position: absolute;
+  left: 50%;
+  bottom: -1.5%;
+  width: 74%;
+  height: 7%;
+  translate: -50% 0;
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(26, 26, 25, 0.44) 0%,
+    rgba(26, 26, 25, 0.14) 52%,
+    rgba(26, 26, 25, 0) 78%
+  );
+  opacity: calc(var(--book-fade) * var(--shadow-opacity));
+  pointer-events: none;
+}
+
+/*
  * Spine: the binding the cover hinges on. It belongs to the book body rather
  * than the cover, so it stays put while the cover swings away from it.
  */
@@ -216,8 +260,8 @@
     #15130f 100%
   );
   box-shadow:
-    inset -1px 0 0 rgba(255, 255, 255, 0.05),
-    inset 1px 0 0 rgba(255, 255, 255, 0.07);
+    inset -1px 0 0 rgba(255, 248, 232, calc(0.1 + var(--page-open) * 0.34)),
+    inset 1px 0 0 rgba(255, 248, 232, 0.06);
   transform: translateZ(2px);
 }
 
@@ -253,12 +297,56 @@
     #272421 66%,
     #161513 100%
   );
+  /*
+   * Rim light: the two edges that face the viewer catch the light, and catch
+   * more of it as the board swings up. Driven off --page-open so the highlight
+   * arrives with the opening rather than being painted on permanently.
+   */
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.05),
-    inset 1px 0 0 rgba(255, 255, 255, 0.07),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 1px 0 rgba(255, 248, 232, calc(0.14 + var(--page-open) * 0.34)),
+    inset -1px 0 0 rgba(255, 248, 232, calc(0.08 + var(--page-open) * 0.3)),
     0 18px 40px -18px rgba(0, 0, 0, 0.6);
 }
+
+/* Warm bounce across the board, strengthening as it turns to the light. */
+.book-cover__board::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    250deg,
+    rgba(253, 246, 230, 0.24) 0%,
+    rgba(253, 246, 230, 0.06) 24%,
+    rgba(253, 246, 230, 0) 46%
+  );
+  opacity: calc(0.18 + var(--page-open) * 0.8);
+  pointer-events: none;
+}
+
+/*
+ * Specular sweep: a narrow highlight that rakes across the board as it opens.
+ * The opacity uses min() to make a triangle that peaks mid-swing, so the
+ * highlight travels with the movement instead of fading in and sitting there.
+ */
+.book-cover__board::before {
+  content: "";
+  position: absolute;
+  inset: -12% -25%;
+  background: linear-gradient(
+    104deg,
+    transparent 40%,
+    rgba(255, 251, 240, 0.46) 50%,
+    transparent 60%
+  );
+  transform: translate3d(calc(var(--page-open) * 130% - 62%), 0, 0);
+  opacity: calc(
+    1.15 * max(0, min(var(--page-open), 1 - var(--page-open)))
+  );
+  pointer-events: none;
+}
+
 
 .book-cover__inner {
   position: absolute;

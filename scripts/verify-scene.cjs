@@ -375,6 +375,96 @@ const scrollToProgress = async (page, m, s) => {
         Number(atEnd.book) === 0,
       `book ${atStart.book}->${atEnd.book}, spotlight ${atStart.spot}->${atEnd.spot}`,
     );
+
+    // Ground contact and reflection must be present while the book is, and
+    // must not outlive it.
+    const ground = async () =>
+      page.evaluate(() => ({
+        reflect: getComputedStyle(document.querySelector(".book__reflection")).opacity,
+        contact: getComputedStyle(document.querySelector(".book__contact")).opacity,
+      }));
+    await scrollToProgress(page, m, 0);
+    const groundShown = await ground();
+    await scrollToProgress(page, m, 1);
+    const groundHidden = await ground();
+    check(
+      "ground contact and reflection live and die with the book",
+      Number(groundShown.reflect) > 0.4 &&
+        Number(groundShown.contact) > 0.5 &&
+        Number(groundHidden.reflect) === 0 &&
+        Number(groundHidden.contact) === 0,
+      `shown ${groundShown.reflect}/${groundShown.contact}, hidden ${groundHidden.reflect}/${groundHidden.contact}`,
+    );
+    await browser.close();
+  }
+
+  // ---- 6b. Book lighting ------------------------------------------------
+  {
+    const browser = await chromium.launch();
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await page.goto(BASE, { waitUntil: "networkidle" });
+    const m = await page.evaluate(() => {
+      const el = document.querySelector(".scroll-track");
+      return { h: el.getBoundingClientRect().height, vh: window.innerHeight };
+    });
+
+    const specAt = async (s) => {
+      await scrollToProgress(page, m, s);
+      return page.evaluate(
+        () => getComputedStyle(document.querySelector(".book-cover__board"), "::before").opacity,
+      );
+    };
+
+    // The highlight should be absent when closed, peak while the board is
+    // moving, and gone once it is flat open. A sweep that never leaves a
+    // resting value is not a sweep, it is a static gradient.
+    const sweep = {
+      closed: Number(await specAt(0.15)),
+      midA: Number(await specAt(0.45)),
+      midB: Number(await specAt(0.5)),
+      open: Number(await specAt(0.75)),
+    };
+    check(
+      "specular sweep is off at rest and peaks mid-swing",
+      sweep.closed === 0 &&
+        sweep.midA > 0.05 &&
+        sweep.midB > 0.05 &&
+        sweep.open === 0,
+      `closed ${sweep.closed}, mid ${sweep.midA}/${sweep.midB}, open ${sweep.open}`,
+    );
+
+    const sweepTravel = await page.evaluate(async () => {
+      const board = document.querySelector(".book-cover__board");
+      const read = () => getComputedStyle(board, "::before").transform;
+      return { first: read() };
+    });
+    await scrollToProgress(page, m, 0.5);
+    sweepTravel.second = await page.evaluate(
+      () => getComputedStyle(document.querySelector(".book-cover__board"), "::before").transform,
+    );
+    check(
+      "specular sweep actually travels across the board",
+      sweepTravel.first !== sweepTravel.second,
+      sweepTravel.first === sweepTravel.second ? "transform static" : "moving",
+    );
+
+    // Rim light has to gain strength with the opening, not be painted on.
+    const rim = await page.evaluate(() => {
+      const board = document.querySelector(".book-cover__board");
+      const read = () => getComputedStyle(board).boxShadow;
+      return { shadow: read() };
+    });
+    await scrollToProgress(page, m, 0.05);
+    const rimClosed = rim.shadow;
+    await scrollToProgress(page, m, 0.62);
+    const rimOpen = await page.evaluate(
+      () => getComputedStyle(document.querySelector(".book-cover__board")).boxShadow,
+    );
+    check(
+      "rim light strengthens as the cover opens",
+      rimClosed !== rimOpen,
+      rimClosed === rimOpen ? "box-shadow static" : "brighter when open",
+    );
     await browser.close();
   }
 
