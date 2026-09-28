@@ -81,8 +81,13 @@ export function useBookScroll<T extends HTMLElement>() {
       // introduction never has to compete with the book for legibility.
       write("--book-fade", 1 - stage(progress, 0.86, 0.93));
 
-      // Opening: the cover swings around the spine on the left edge.
-      write("--cover-angle", -178 * open, "deg");
+      // Opening: the cover swings around the spine on the left edge. It carries a
+      // little past the resting angle at the end of the opening, then settles
+      // back onto it, so it reads as a thing with weight being let down, not a
+      // door on a hinge that was there all along.
+      const over = stage(progress, 0.45, 0.62);
+      const settled = easeOutCubic(stage(progress, 0.6, 0.68));
+      write("--cover-angle", -178 * open - over * 7 * (1 - settled), "deg");
       write("--page-open", open);
 
       /*

@@ -92,23 +92,42 @@ const scrollToProgress = async (page, m, s) => {
       `${v65["--cover-angle"].toFixed(1)}deg`,
     );
 
-    // Rotation must increase monotonically across the whole opening window.
-    let previous = Infinity;
-    let monotonic = true;
-    let worst = 0;
-    for (let s = 0.35; s <= 0.65; s += 0.01) {
+    // The cover is driven by easing, not the visitor's hand: it opens, and at
+    // the end of the opening carries a little past the resting angle before
+    // settling back onto it. So the rotation may regress, but only a bounded,
+    // late dip as it drops onto the rest, never an early snap back.
+    let peakMag = 0;
+    let peakAt = 0;
+    let regress = 0;
+    let regressAt = 0;
+    let finalMag = 0;
+    for (let s = 0.35; s <= 0.7; s += 0.005) {
       await scrollToProgress(page, m, s);
-      const angle = (await vars(page))["--cover-angle"];
-      if (angle > previous + 1e-6) {
-        monotonic = false;
-        worst = Math.max(worst, angle - previous);
+      const mag = -(await vars(page))["--cover-angle"];
+      if (mag > peakMag + 1e-6) {
+        peakMag = mag;
+        peakAt = s;
+        regress = 0;
+      } else if (mag < peakMag - 1e-6) {
+        regress = Math.max(regress, peakMag - mag);
+        regressAt = s;
       }
-      previous = angle;
+      finalMag = mag;
     }
     check(
-      "opening never snaps back towards closed",
-      monotonic,
-      monotonic ? "" : `regressed by ${worst.toFixed(3)}deg`,
+      "the cover overturns a little before it settles",
+      peakMag > 180,
+      `peak ${peakMag.toFixed(1)}deg at ${peakAt.toFixed(2)}`,
+    );
+    check(
+      "the overturn never snaps: only a bounded settle afterwards",
+      regress < 9 && regressAt >= peakAt - 1e-6,
+      `regressed ${regress.toFixed(2)}deg from ${peakAt.toFixed(2)}`,
+    );
+    check(
+      "the cover rests on -178 once the book is open",
+      Math.abs(finalMag - 178) < 0.5,
+      `${finalMag.toFixed(2)}deg`,
     );
 
     await scrollToProgress(page, m, 0.6);
