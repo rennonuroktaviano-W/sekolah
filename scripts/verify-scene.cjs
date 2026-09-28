@@ -233,6 +233,29 @@ const scrollToProgress = async (page, m, s) => {
   // ---- 3. Reduced motion ------------------------------------------------
   {
     const browser = await chromium.launch();
+
+    // The reduced-motion pass is only meaningful if the thing it disables is
+    // actually running in the first place. Read both, or the check is vacuous.
+    const dotAnimation = async (reducedMotion) => {
+      const page = await browser.newPage({
+        viewport: { width: 1440, height: 900 },
+        reducedMotion,
+      });
+      await page.goto(BASE, { waitUntil: "networkidle" });
+      const name = await page.evaluate(
+        () => getComputedStyle(document.querySelector(".scroll-hint__dot")).animationName,
+      );
+      if (reducedMotion !== "no-preference") await page.close();
+      return name;
+    };
+
+    const dotNormal = await dotAnimation("no-preference");
+    check(
+      "ambient animations actually run in normal mode",
+      dotNormal === "hint-fall",
+      `animation-name: ${dotNormal}`,
+    );
+
     const page = await browser.newPage({
       viewport: { width: 1440, height: 900 },
       reducedMotion: "reduce",
@@ -251,14 +274,95 @@ const scrollToProgress = async (page, m, s) => {
         nameFilter: getComputedStyle(name).filter,
       };
     });
-    check("scroll hint animation disabled", rm.dotAnimation === "none", rm.dotAnimation);
-    check("intro blur disabled", rm.nameFilter === "none", rm.nameFilter);
+    check(
+      "scroll hint animation disabled under reduced motion",
+      rm.dotAnimation === "none",
+      rm.dotAnimation,
+    );
+    check("intro blur removed entirely", rm.nameFilter === "none", rm.nameFilter);
     // The story must still be reachable by scrolling.
     await scrollToProgress(page, m, 1);
     const rmEnd = await page.evaluate(
       () => getComputedStyle(document.querySelector(".intro__name")).opacity,
     );
     check("story still completes under reduced motion", Number(rmEnd) > 0.95, rmEnd);
+    await browser.close();
+  }
+
+  // ---- 3b. No unresolved timeline custom properties ----------------------
+  {
+    const browser = await chromium.launch();
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await page.goto(BASE, { waitUntil: "networkidle" });
+
+    // Every value the hook writes, plus the two the CSS derives on its own.
+    // A single missing declaration makes a whole shorthand silently invalid,
+    // which is how the scroll hint animation was dead without a word of it.
+    const UNRESOLVED_OK = new Set(["--leaf-index", "--line"]);
+    const bad = await page.evaluate(() => {
+      const names = [
+        "--progress", "--book-scale", "--book-ty", "--book-rx", "--book-ry",
+        "--cover-angle", "--page-open", "--page-fan", "--seam", "--spread-rx",
+        "--book-fade", "--light-scale", "--light-opacity", "--light-blur",
+        "--bloom", "--fill-opacity", "--intro",
+        "--fx-grain-opacity", "--fx-vignette-strength", "--fx-spotlight-opacity",
+        "--fx-dust-opacity", "--fx-ray-opacity", "--fx-streak-opacity",
+        "--ease-hint",
+      ];
+      const track = getComputedStyle(document.querySelector(".scroll-track"));
+      return names
+        .map((n) => [n, track.getPropertyValue(n).trim()])
+        .filter(([, v]) => v === "")
+        .map(([n]) => n);
+    });
+    check(
+      "every custom property the timeline depends on resolves",
+      bad.length === 0,
+      bad.length ? `unresolved: ${bad.join(", ")}` : "all resolve",
+    );
+    void UNRESOLVED_OK;
+
+    // And nothing in our own stylesheet may reference a var nobody sets.
+    const dangling = await page.evaluate(() => {
+      const declared = new Set();
+      const referenced = new Map();
+      const collect = (rules) => {
+        for (const rule of rules) {
+          if (rule.cssRules) collect(rule.cssRules);
+          const text = rule.cssText || "";
+          for (const m of text.matchAll(/(--[a-z0-9-]+)\s*:/g)) declared.add(m[1]);
+          for (const m of text.matchAll(/var\(\s*(--[a-z0-9-]+)/g)) {
+            if (!referenced.has(m[1])) referenced.set(m[1], new Set());
+            referenced
+              .get(m[1])
+              .add(rule.selectorText || rule.parentRule?.selectorText || "@rule");
+          }
+        }
+      };
+      for (const sheet of document.styleSheets) {
+        try {
+          collect(sheet.cssRules);
+        } catch {
+          /* not ours */
+        }
+      }
+      // Set from inline styles rather than a stylesheet.
+      for (const el of document.querySelectorAll("*")) {
+        for (const name of ["--leaf-index", "--line"]) {
+          if (el.style.getPropertyValue(name)) declared.add(name);
+        }
+      }
+      // Tailwind preflight and next/font own these; not part of our contract.
+      const external = /^--(default-|font|color-scheme|tw-)/;
+      return [...referenced.entries()]
+        .filter(([n]) => !declared.has(n) && !external.test(n))
+        .map(([n, where]) => `${n} in ${[...where].join(", ")}`);
+    });
+    check(
+      "no stylesheet references a custom property nobody declares",
+      dangling.length === 0,
+      dangling.join(" | ") || "all declared",
+    );
     await browser.close();
   }
 
@@ -310,6 +414,70 @@ const scrollToProgress = async (page, m, s) => {
       return count;
     });
     check("no content is gated behind :hover", hoverOnly === 0);
+    await browser.close();
+  }
+
+  // ---- 5b. Line-masked reveal -------------------------------------------
+  {
+    const browser = await chromium.launch();
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await page.goto(BASE, { waitUntil: "networkidle" });
+    const m = await page.evaluate(() => {
+      const el = document.querySelector(".scroll-track");
+      return { h: el.getBoundingClientRect().height, vh: window.innerHeight };
+    });
+
+    // The mask clips overflow, so a mask that is too tight silently eats
+    // descenders and the tail of the school name.
+    const clipped = await page.evaluate(() => {
+      return [...document.querySelectorAll(".intro__line")].map((mask) => {
+        const inner = mask.firstElementChild;
+        return {
+          text: inner.textContent.trim().slice(0, 24),
+          overflow: inner.getBoundingClientRect().height - mask.clientHeight,
+        };
+      });
+    });
+    const worstClip = Math.max(...clipped.map((c) => c.overflow));
+    check(
+      "line masks do not clip their text",
+      clipped.length === 4 && worstClip <= 0,
+      `${clipped.length} lines, worst overflow ${worstClip.toFixed(2)}px`,
+    );
+
+    // The stagger has to be real: later lines must lag earlier ones.
+    await scrollToProgress(page, m, 0.957);
+    const opacities = await page.evaluate(() =>
+      [...document.querySelectorAll(".intro__line-inner")].map(
+        (el) => getComputedStyle(el).opacity,
+      ),
+    );
+    check(
+      "lines are staggered, not revealed together",
+      opacities.length === 4 &&
+        opacities.every((o, i, all) => i === 0 || Number(o) <= Number(all[i - 1])) &&
+        Number(opacities[0]) > Number(opacities[3]) &&
+        Number(opacities[3]) < 0.9,
+      opacities.map((o) => Number(o).toFixed(2)).join(" > "),
+    );
+
+    await scrollToProgress(page, m, 1);
+    const settled = await page.evaluate(() =>
+      [...document.querySelectorAll(".intro__line-inner")].map((el) => {
+        const cs = getComputedStyle(el);
+        return {
+          opacity: Number(cs.opacity),
+          filter: cs.filter,
+          // An identity matrix, not literally "none".
+          settled: cs.transform === "none" || cs.transform === "matrix(1, 0, 0, 1, 0, 0)",
+        };
+      }),
+    );
+    check(
+      "all lines fully settled by the end of the track",
+      settled.every((s) => s.opacity === 1 && s.filter === "none" && s.settled),
+      settled.map((s) => `${s.opacity}/${s.filter}/${s.settled}`).join(" "),
+    );
     await browser.close();
   }
 

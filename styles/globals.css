@@ -16,6 +16,8 @@
     "Palatino Linotype", Georgia, "Times New Roman", serif;
   --font-body: var(--font-body-loaded), -apple-system, BlinkMacSystemFont,
     "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+
+  --ease-hint: cubic-bezier(0.45, 0.05, 0.55, 0.95);
 }
 
 @layer base {
@@ -575,7 +577,7 @@
   translate: -50% 0;
   border-radius: 50%;
   background: var(--color-ink-soft);
-  animation: hint-fall 2.4s var(--ease-book) infinite;
+  animation: hint-fall 2.4s var(--ease-hint) infinite;
 }
 
 @keyframes hint-fall {
@@ -612,21 +614,49 @@
   text-align: center;
 }
 
-/* Intro type emerges from the light. Blur is desktop-only (see responsive). */
-.intro__inner > * {
-  opacity: var(--intro);
-  transform: translate3d(0, calc((1 - var(--intro)) * 20px), 0);
-  filter: blur(calc((1 - var(--intro)) * 5px));
+/*
+ * Line-masked reveal. Each block is a mask with a line rising inside it, and
+ * --line staggers them. The per-line offset is baked into the clamp, so the
+ * stagger costs no extra JS and no extra state.
+ *
+ * This replaces a whole-block cross-fade behind `filter: blur()`. Blur is the
+ * most expensive property in the scene and it repainted on every frame; this
+ * is transform and opacity only, and it reads as type being pulled out of the
+ * light rather than as a generic fade.
+ */
+.intro__line {
+  display: block;
+  overflow: hidden;
+  /* Room for descenders, taken back out so the mask does not shift layout. */
+  padding-bottom: 0.1em;
+  margin-bottom: -0.1em;
+}
+
+.intro__line-inner {
+  display: block;
+  /*
+   * --intro is eased with an ease-out curve, which front-loads it so hard
+   * that a naive stagger saturates within the first third of the window and
+   * every line lands at once. A low multiplier against a wide offset spreads
+   * the cascade across the whole reveal instead.
+   */
+  --staggered: clamp(
+    0,
+    (var(--intro) - var(--line) * 0.12) * 1.6,
+    1
+  );
+  opacity: var(--staggered);
+  transform: translate3d(0, calc((1 - var(--staggered)) * 105%), 0);
+  will-change: transform, opacity;
 }
 
 /*
  * Without scripting the timeline never runs, so the school information is
  * shown plainly instead of being trapped behind an animation.
  */
-html:not(.js) .intro__inner > * {
+html:not(.js) .intro__line-inner {
   opacity: 1;
   transform: none;
-  filter: none;
 }
 
 /* Typography emerges from the light, so it leads slightly slower. */
@@ -692,11 +722,6 @@ html:not(.js) .intro__inner > * {
     filter: blur(4px);
   }
 
-  .intro__inner > * {
-    filter: none;
-    transform: translate3d(0, calc((1 - var(--intro)) * 14px), 0);
-  }
-
   .intro-overlay {
     padding: 0 1.5rem;
   }
@@ -713,8 +738,7 @@ html:not(.js) .intro__inner > * {
   /* The story still plays on scroll, just without blur churn. */
   .light__crease,
   .light__halo,
-  .light__bloom,
-  .intro__inner > * {
+  .light__bloom {
     filter: none;
   }
 }
